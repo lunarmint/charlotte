@@ -1,10 +1,18 @@
+"""USM (CRI Sofdec) container format demuxer.
+
+This module demuxes CRI Middleware's USM container files, extracting:
+- Video streams (VP9 codec in IVF format)
+- Audio streams (HCA format)
+
+USM files are commonly used in video games for cutscenes and movies.
+"""
 import socket
 import struct
-
 from pathlib import Path
 
 
 class Header:
+    """USM chunk header."""
     def __init__(self):
         self.signature: int = 0
         self.data_size: int = 0
@@ -17,6 +25,17 @@ class Header:
 
 
 class USM:
+    """USM container demuxer.
+
+    Demuxes USM files and extracts video (VP9/IVF) and audio (HCA) streams.
+    Handles encrypted USM files using provided keys.
+
+    Args:
+        file_path: Path to the USM file
+        key1: Decryption key (4 bytes) for video/audio
+        key2: Decryption key (4 bytes) for video/audio
+    """
+
     def __init__(self, file_path: str, key1: bytes, key2: bytes):
         self.file_path = Path(file_path)
         self.filename = self.file_path.name
@@ -165,7 +184,7 @@ class USM:
 
                 elif header.signature == 0x40534641:
                     if header.data_type == 0 and audio_extract:
-                        file_path = output_path / f"{self.filename[:-4]}_{header.chno}.hca"
+                        file_path = output_path / f"{self.filename[:-4]}_{header.channel_no}.hca"
 
                         if str(file_path) not in file_streams:
                             file_streams[str(file_path)] = open(file_path, "wb")
