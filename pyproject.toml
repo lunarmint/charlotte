@@ -7,6 +7,7 @@ requires-python = ">=3.13"
 readme = "README.md"
 maintainers = [{ name = "Mint" }]
 dependencies = [
+    "orjson>=3.11.5",
     "numpy>=2.4.0",
     "pyinstaller==6.17.0",
     "pysubs2>=1.8.0",

@@ -1012,8 +1012,8 @@
 			]
 		},
 		{
-			"encAudio": true,
 			"version": "6.1",
+			"encAudio": true,
 			"videoGroups": [
 				{
 					"version": "6018",
@@ -1060,8 +1060,8 @@
 			]
 		},
 		{
-			"encAudio": true,
 			"version": "6.2",
+			"encAudio": true,
 			"videoGroups": [
 				{
 					"key": 6613587043867149,
@@ -1089,8 +1089,8 @@
 			]
 		},
 		{
-			"encAudio": true,
 			"version": "6.3",
+			"encAudio": true,
 			"videoGroups": [
 				{
 					"version": "6016",

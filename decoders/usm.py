@@ -6,22 +6,55 @@ This module demuxes CRI Middleware's USM container files, extracting:
 
 USM files are commonly used in video games for cutscenes and movies.
 """
-import socket
-import struct
+import typer
 from pathlib import Path
+from typing import BinaryIO
 
 
-class Header:
-    """USM chunk header."""
+# USM chunk signatures
+SIG_CRID = 0x43524944  # CRID - Container ID
+SIG_VIDEO = 0x40534656  # @SFV - Video chunk
+SIG_AUDIO = 0x40534641  # @SFA - Audio chunk
+SIG_CUE = 0x40435545    # @CUE - Cue point
+
+HEADER_SIZE = 32
+VIDEO_OFFSET = 0x40
+AUDIO_OFFSET = 0x140
+MASK_SIZE = 0x20
+MIN_VIDEO_SIZE = 0x200
+
+
+class ChunkHeader:
+    """USM chunk header structure."""
+
+    __slots__ = (
+        "signature", "data_size", "data_offset", "padding_size",
+        "channel_no", "data_type", "frame_time", "frame_rate"
+    )
+
     def __init__(self):
-        self.signature: int = 0
-        self.data_size: int = 0
-        self.data_offset: int = 0
-        self.padding_size: int = 0
-        self.channel_no: int = 0
-        self.data_type: int = 0
-        self.frame_time: int = 0
-        self.frame_rate: int = 0
+        self.signature = 0
+        self.data_size = 0
+        self.data_offset = 0
+        self.padding_size = 0
+        self.channel_no = 0
+        self.data_type = 0
+        self.frame_time = 0
+        self.frame_rate = 0
+
+    @classmethod
+    def from_bytes(cls, data: bytes) -> "ChunkHeader":
+        """Parse chunk header from 32-byte block."""
+        header = cls()
+        header.signature = int.from_bytes(data[0:4], "big")
+        header.data_size = int.from_bytes(data[4:8], "big")
+        header.data_offset = data[9]
+        header.padding_size = int.from_bytes(data[10:12], "big")
+        header.channel_no = data[12]
+        header.data_type = data[15]
+        header.frame_time = int.from_bytes(data[16:20], "big")
+        header.frame_rate = int.from_bytes(data[20:24], "big")
+        return header
 
 
 class USM:
@@ -36,171 +69,158 @@ class USM:
         key2: Decryption key (4 bytes) for video/audio
     """
 
-    def __init__(self, file_path: str, key1: bytes, key2: bytes):
+    def __init__(self, file_path: Path, key1: bytes, key2: bytes):
         self.file_path = Path(file_path)
-        self.filename = self.file_path.name
         self.key1 = key1
         self.key2 = key2
-        self.video_mask1 = bytearray(0x20)
-        self.video_mask2 = bytearray(0x20)
-        self.audio_mask = bytearray(0x20)
-        self._init_mask(key1, key2)
 
-    def _init_mask(self, key1: bytes, key2: bytes):
-        self.video_mask1[0x00] = key1[0]
-        self.video_mask1[0x01] = key1[1]
-        self.video_mask1[0x02] = key1[2]
-        self.video_mask1[0x03] = (key1[3] - 0x34) & 0xFF
-        self.video_mask1[0x04] = (key2[0] + 0xF9) & 0xFF
-        self.video_mask1[0x05] = (key2[1] ^ 0x13) & 0xFF
-        self.video_mask1[0x06] = (key2[2] + 0x61) & 0xFF
-        self.video_mask1[0x07] = (self.video_mask1[0x00] ^ 0xFF) & 0xFF
-        self.video_mask1[0x08] = (self.video_mask1[0x02] + self.video_mask1[0x01]) & 0xFF
-        self.video_mask1[0x09] = (self.video_mask1[0x01] - self.video_mask1[0x07]) & 0xFF
-        self.video_mask1[0x0A] = (self.video_mask1[0x02] ^ 0xFF) & 0xFF
-        self.video_mask1[0x0B] = (self.video_mask1[0x01] ^ 0xFF) & 0xFF
-        self.video_mask1[0x0C] = (self.video_mask1[0x0B] + self.video_mask1[0x09]) & 0xFF
-        self.video_mask1[0x0D] = (self.video_mask1[0x08] - self.video_mask1[0x03]) & 0xFF
-        self.video_mask1[0x0E] = (self.video_mask1[0x0D] ^ 0xFF) & 0xFF
-        self.video_mask1[0x0F] = (self.video_mask1[0x0A] - self.video_mask1[0x0B]) & 0xFF
-        self.video_mask1[0x10] = (self.video_mask1[0x08] - self.video_mask1[0x0F]) & 0xFF
-        self.video_mask1[0x11] = (self.video_mask1[0x10] ^ self.video_mask1[0x07]) & 0xFF
-        self.video_mask1[0x12] = (self.video_mask1[0x0F] ^ 0xFF) & 0xFF
-        self.video_mask1[0x13] = (self.video_mask1[0x03] ^ 0x10) & 0xFF
-        self.video_mask1[0x14] = (self.video_mask1[0x04] - 0x32) & 0xFF
-        self.video_mask1[0x15] = (self.video_mask1[0x05] + 0xED) & 0xFF
-        self.video_mask1[0x16] = (self.video_mask1[0x06] ^ 0xF3) & 0xFF
-        self.video_mask1[0x17] = (self.video_mask1[0x13] - self.video_mask1[0x0F]) & 0xFF
-        self.video_mask1[0x18] = (self.video_mask1[0x15] + self.video_mask1[0x07]) & 0xFF
-        self.video_mask1[0x19] = (0x21 - self.video_mask1[0x13]) & 0xFF
-        self.video_mask1[0x1A] = (self.video_mask1[0x14] ^ self.video_mask1[0x17]) & 0xFF
-        self.video_mask1[0x1B] = (self.video_mask1[0x16] + self.video_mask1[0x16]) & 0xFF
-        self.video_mask1[0x1C] = (self.video_mask1[0x17] + 0x44) & 0xFF
-        self.video_mask1[0x1D] = (self.video_mask1[0x03] + self.video_mask1[0x04]) & 0xFF
-        self.video_mask1[0x1E] = (self.video_mask1[0x05] - self.video_mask1[0x16]) & 0xFF
-        self.video_mask1[0x1F] = (self.video_mask1[0x1D] ^ self.video_mask1[0x13]) & 0xFF
+        # Initialize decryption masks
+        self.video_mask1 = bytearray(MASK_SIZE)
+        self.video_mask2 = bytearray(MASK_SIZE)
+        self.audio_mask = bytearray(MASK_SIZE)
+        self._init_masks(key1, key2)
 
-        table2 = b"URUC"
-        for i in range(0x20):
-            self.video_mask2[i] = (self.video_mask1[i] ^ 0xFF) & 0xFF
-            if (i & 1) == 1:
-                self.audio_mask[i] = table2[(i >> 1) & 3]
-            else:
-                self.audio_mask[i] = (self.video_mask1[i] ^ 0xFF) & 0xFF
+    def _init_masks(self, key1: bytes, key2: bytes) -> None:
+        """Initialize decryption masks from keys."""
+        m = self.video_mask1  # Shorthand for readability
 
-    def _mask_video(self, data: bytearray, size: int):
-        data_offset = 0x40
-        size -= data_offset
+        # Initialize base mask from keys
+        m[0x00] = key1[0]
+        m[0x01] = key1[1]
+        m[0x02] = key1[2]
+        m[0x03] = (key1[3] - 0x34) & 0xFF
+        m[0x04] = (key2[0] + 0xF9) & 0xFF
+        m[0x05] = (key2[1] ^ 0x13) & 0xFF
+        m[0x06] = (key2[2] + 0x61) & 0xFF
 
-        if size < 0x200:
+        # Derive remaining mask values
+        m[0x07] = (m[0x00] ^ 0xFF) & 0xFF
+        m[0x08] = (m[0x02] + m[0x01]) & 0xFF
+        m[0x09] = (m[0x01] - m[0x07]) & 0xFF
+        m[0x0A] = (m[0x02] ^ 0xFF) & 0xFF
+        m[0x0B] = (m[0x01] ^ 0xFF) & 0xFF
+        m[0x0C] = (m[0x0B] + m[0x09]) & 0xFF
+        m[0x0D] = (m[0x08] - m[0x03]) & 0xFF
+        m[0x0E] = (m[0x0D] ^ 0xFF) & 0xFF
+        m[0x0F] = (m[0x0A] - m[0x0B]) & 0xFF
+        m[0x10] = (m[0x08] - m[0x0F]) & 0xFF
+        m[0x11] = (m[0x10] ^ m[0x07]) & 0xFF
+        m[0x12] = (m[0x0F] ^ 0xFF) & 0xFF
+        m[0x13] = (m[0x03] ^ 0x10) & 0xFF
+        m[0x14] = (m[0x04] - 0x32) & 0xFF
+        m[0x15] = (m[0x05] + 0xED) & 0xFF
+        m[0x16] = (m[0x06] ^ 0xF3) & 0xFF
+        m[0x17] = (m[0x13] - m[0x0F]) & 0xFF
+        m[0x18] = (m[0x15] + m[0x07]) & 0xFF
+        m[0x19] = (0x21 - m[0x13]) & 0xFF
+        m[0x1A] = (m[0x14] ^ m[0x17]) & 0xFF
+        m[0x1B] = (m[0x16] + m[0x16]) & 0xFF
+        m[0x1C] = (m[0x17] + 0x44) & 0xFF
+        m[0x1D] = (m[0x03] + m[0x04]) & 0xFF
+        m[0x1E] = (m[0x05] - m[0x16]) & 0xFF
+        m[0x1F] = (m[0x1D] ^ m[0x13]) & 0xFF
+
+        # Generate video mask 2 and audio mask
+        table = b"URUC"
+        for i in range(MASK_SIZE):
+            self.video_mask2[i] = (m[i] ^ 0xFF) & 0xFF
+            # C# line 77: _audioMask[i] = (byte)((i & 1) == 1 ? table2[i >> 1 & 3] : _videoMask1[i] ^ 0xFF);
+            self.audio_mask[i] = table[(i >> 1) & 3] if (i & 1) else (m[i] ^ 0xFF)
+
+    def _decrypt_video(self, data: bytearray) -> None:
+        """Decrypt video chunk in-place."""
+        size = len(data) - VIDEO_OFFSET
+        if size < MIN_VIDEO_SIZE:
             return
 
         mask = bytearray(self.video_mask2)
 
+        # Decrypt from offset 0x100 onwards
+        # C# line 88: mask[i & 0x1F] = (byte)((data[i + dataOffset] ^= mask[i & 0x1F]) ^ _videoMask2[i & 0x1F]);
         for i in range(0x100, size):
-            mask_idx = i & 0x1F
-            data_idx = i + data_offset
-            data[data_idx] ^= mask[mask_idx]
-            mask[mask_idx] = (data[data_idx] ^ self.video_mask2[mask_idx]) & 0xFF
+            idx = (i & 0x1F)
+            pos = i + VIDEO_OFFSET
+            data[pos] ^= mask[idx]
+            mask[idx] = data[pos] ^ self.video_mask2[idx]
 
-        mask[:0x20] = self.video_mask1[:0x20]
-
+        # Switch to mask1 and decrypt first 0x100 bytes
+        # C# line 90: data[i + dataOffset] ^= mask[i & 0x1F] ^= data[0x100 + i + dataOffset];
+        mask[:MASK_SIZE] = self.video_mask1[:MASK_SIZE]
         for i in range(0x100):
-            mask_idx = i & 0x1F
-            data_idx = i + data_offset
-            data_idx2 = 0x100 + i + data_offset
+            idx = (i & 0x1F)
+            pos = i + VIDEO_OFFSET
+            pos2 = 0x100 + i + VIDEO_OFFSET
+            mask[idx] ^= data[pos2]
+            data[pos] ^= mask[idx]
 
-            mask[mask_idx] ^= data[data_idx2]
-            data[data_idx] ^= mask[mask_idx]
-
-    def _mask_audio(self, data: bytearray, size: int):
-        data_offset = 0x140
-        size -= data_offset
-
+    def _decrypt_audio(self, data: bytearray) -> None:
+        """Decrypt audio chunk in-place."""
+        size = len(data) - AUDIO_OFFSET
         for i in range(size):
-            data[i + data_offset] ^= self.audio_mask[i & 0x1F]
+            data[i + AUDIO_OFFSET] ^= self.audio_mask[i & 0x1F]
 
-    @staticmethod
-    def _bswap(value: int, size: int = 4) -> int:
-        if size == 4:
-            return socket.htonl(value)
-        elif size == 2:
-            return socket.htons(value)
-        else:
-            raise ValueError(f"Unsupported size: {size}")
+    def _open_stream(self, file_path: Path, streams: dict, paths: dict, stream_type: str) -> BinaryIO:
+        """Open or retrieve existing file stream."""
+        path_str = str(file_path)
+        if path_str not in streams:
+            streams[path_str] = open(file_path, "wb")
+            paths.setdefault(stream_type, []).append(path_str)
+        return streams[path_str]
 
     def demux(
-        self, video_extract: bool = True, audio_extract: bool = True, output_dir: str = "."
-    ) -> dict:
+        self,
+        output_dir: str = "."
+    ) -> dict[str, list[str]]:
+        """Demux USM file and extract streams."""
         output_path = Path(output_dir)
         output_path.mkdir(exist_ok=True)
 
-        file_streams = {}
+        base_name = self.file_path.stem
+        streams = {}
         file_paths = {}
 
-        print(f"Demuxing {self.filename} : extracting video and audio...")
+        print(f"Demuxing {self.file_path.name}: extracting video and audio...")
 
         with open(self.file_path, "rb") as fp:
-            file_size = self.file_path.stat().st_size
-
-            while file_size > 0:
-                byte_block = fp.read(32)
-                if len(byte_block) < 32:
+            while True:
+                # Read chunk header
+                header_data = fp.read(HEADER_SIZE)
+                if len(header_data) < HEADER_SIZE:
                     break
 
-                file_size -= 32
+                header = ChunkHeader.from_bytes(header_data)
 
-                header = Header()
-                header.signature = self._bswap(struct.unpack("<I", byte_block[0:4])[0])
-                header.data_size = self._bswap(struct.unpack("<I", byte_block[4:8])[0])
-                header.data_offset = byte_block[9]
-                header.padding_size = self._bswap(struct.unpack("<H", byte_block[10:12])[0], 2)
-                header.channel_no = byte_block[12]
-                header.data_type = byte_block[15]
-                header.frame_time = self._bswap(struct.unpack("<I", byte_block[16:20])[0])
-                header.frame_rate = self._bswap(struct.unpack("<I", byte_block[20:24])[0])
-
-                size = header.data_size - header.data_offset - header.padding_size
+                # Read chunk data
+                data_size = header.data_size - header.data_offset - header.padding_size
                 fp.seek(header.data_offset - 0x18, 1)
-                data = bytearray(fp.read(size))
+                data = bytearray(fp.read(data_size))
                 fp.seek(header.padding_size, 1)
-                file_size -= header.data_size - 0x18
 
-                if header.signature == 0x43524944:
-                    pass
+                # Process chunk based on signature
+                if header.signature == SIG_CRID:
+                    pass  # Container ID chunk, skip
 
-                elif header.signature == 0x40534656:
-                    if header.data_type == 0 and video_extract:
-                        self._mask_video(data, size)
-                        file_path = output_path / f"{self.filename[:-4]}.ivf"
+                elif header.signature == SIG_VIDEO:
+                    if header.data_type == 0:
+                        self._decrypt_video(data)
+                        file_path = output_path / f"{base_name}.ivf"
+                        stream = self._open_stream(file_path, streams, file_paths, "ivf")
+                        stream.write(data)
 
-                        if str(file_path) not in file_streams:
-                            file_streams[str(file_path)] = open(file_path, "wb")
-                            if "ivf" not in file_paths:
-                                file_paths["ivf"] = []
-                            file_paths["ivf"].append(str(file_path))
+                elif header.signature == SIG_AUDIO:
+                    if header.data_type == 0:
+                        file_path = output_path / f"{base_name}_{header.channel_no}.hca"
+                        stream = self._open_stream(file_path, streams, file_paths, "hca")
+                        stream.write(data)
 
-                        file_streams[str(file_path)].write(data)
-
-                elif header.signature == 0x40534641:
-                    if header.data_type == 0 and audio_extract:
-                        file_path = output_path / f"{self.filename[:-4]}_{header.channel_no}.hca"
-
-                        if str(file_path) not in file_streams:
-                            file_streams[str(file_path)] = open(file_path, "wb")
-                            if "hca" not in file_paths:
-                                file_paths["hca"] = []
-                            file_paths["hca"].append(str(file_path))
-
-                        file_streams[str(file_path)].write(data)
-
-                elif header.signature == 0x40435545:  # @CUE
-                    print("@CUE field detected in USM, skipping as we don't need it")
+                elif header.signature == SIG_CUE:
+                    pass  # Cue point chunk, not needed
 
                 else:
-                    print(f"Signature {header.signature} unknown, skipping...")
+                    typer.echo(f"Unknown signature {header.signature}")
 
-        for stream in file_streams.values():
+        # Close all streams
+        for stream in streams.values():
             stream.close()
 
         return file_paths
