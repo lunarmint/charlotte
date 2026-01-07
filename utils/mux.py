@@ -7,6 +7,8 @@ into a single Matroska (MKV) container file using ffmpeg.
 import subprocess
 from pathlib import Path
 
+import typer
+
 
 class FFmpegMuxer:
     """FFmpeg-based muxer for creating MKV containers.

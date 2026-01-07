@@ -42,6 +42,9 @@ def demux(
     output: Annotated[
         str, typer.Option("--output", "-o", help="Output directory")
     ] = ".",
+    keep_original: Annotated[
+        bool, typer.Option("--keep-original", help="Do not delete decoded .ivf and .hca files when done.")
+    ] = False,
 ) -> None:
     """Demux USM file(s) and extract video/audio tracks."""
     usm_files = collect_files(input_path, "usm")
@@ -55,38 +58,16 @@ def demux(
 
         # Display extracted files
         if "ivf" in file_paths:
-            typer.echo(f"  Video: {', '.join(file_paths['ivf'])}")
+            typer.echo(f"Extracted IVF: {', '.join(file_paths['ivf'])}")
         if "hca" in file_paths:
-            typer.echo(f"  Audio: {', '.join(file_paths['hca'])}")
+            typer.echo(f"Extracted HCA: {', '.join(file_paths['hca'])}")
 
-
-@app.command()
-def convert_hca(
-    input_path: Annotated[
-        str, typer.Argument(help="HCA file or directory containing HCA files")
-    ],
-    output: Annotated[
-        str, typer.Option("--output", "-o", help="Output directory")
-    ] = ".",
-    key1: Annotated[
-        int | None, typer.Option("--key1", help="Decryption key1 (uint64)")
-    ] = None,
-    key2: Annotated[
-        int | None, typer.Option("--key2", help="Decryption key2 (uint16)")
-    ] = None,
-) -> None:
-    """Convert HCA audio file(s) to WAV format."""
-    hca_files = collect_files(input_path, "hca")
-    typer.echo(f"Found {len(hca_files)} HCA file(s)")
-
-    for hca_file in hca_files:
-        typer.echo(f"\nConverting: {hca_file.name}")
-        hca = HCA(str(hca_file), key1, key2)
-        hca.decrypt()
-        # Use fast ffmpeg decoder (default)
-        output_wav = hca.convert_to_wav_ffmpeg(output_dir=output)
-
-        typer.echo(f"  Output: {output_wav}")
+        hca_files = collect_files(input_path, "hca")
+        for hca_file in hca_files:
+            hca = HCA(str(hca_file), key1, key2)
+            hca.decrypt()
+            flac_file = hca.convert_to_flac(output_dir=output)
+            typer.echo(f"Converted FLAC: {flac_file}")
 
 
 @app.command()

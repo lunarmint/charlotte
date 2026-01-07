@@ -11,11 +11,13 @@ commonly used in video games. The decoder supports:
 import socket
 import struct
 import subprocess
-import wave
 from dataclasses import dataclass
 from pathlib import Path
 
 import numpy as np
+import typer
+
+from decoders.channel import DecodeTables
 
 # HCA format constants
 HCA_SAMPLES_PER_BLOCK = 0x80  # 128 samples per block
@@ -166,7 +168,6 @@ class Channel:
 
     def _compute_base_table(self) -> None:
         """Compute dequantization scale table (base magnitude for each coefficient)."""
-        from .channel import DecodeTables
 
         for i in range(self.active_coeffs_count):
             value_coef = DecodeTables.DECODE1_VALUE[self.quantized_values[i]] if 0 <= self.quantized_values[i] < 64 else 0.0
@@ -206,7 +207,6 @@ class Channel:
         Reads quantized coefficients from bitstream and applies dequantization
         to produce frequency-domain spectral values.
         """
-        from .channel import DecodeTables
 
         for i in range(self.active_coeffs_count):
             scale = self.scale_factors[i]
@@ -274,8 +274,6 @@ class Channel:
             stereo_mode: Stereo mode (0 = disabled, >0 = enabled)
             side_channel: The side channel to decode into
         """
-        from .channel import DecodeTables
-
         if self.channel_type != 1 or stereo_mode == 0:
             return
 
@@ -300,8 +298,6 @@ class Channel:
         Args:
             subframe_idx: Index of subframe to store output (0-7)
         """
-        from .channel import DecodeTables
-
         # Stage 1: Butterfly operations (FFT-like transform)
         source_buf, dest_buf = self.spectral_coeffs, self.imdct_buffer1
 
@@ -901,7 +897,7 @@ class HCA:
         if self.header_struct.ciph_type == 0:
             return
 
-        print("Decrypting HCA content...")
+        typer.echo("Decrypting HCA content...")
 
         for i in range(self.header_struct.block_count):
             offset = i * self.header_struct.block_size
@@ -913,104 +909,34 @@ class HCA:
             # Update checksum
             checksum = self._checksum(block[:-2])
             struct.pack_into(">H", block, len(block) - 2, checksum)
-
             self.data[offset : offset + self.header_struct.block_size] = block
 
-    def _decode_block(self, block: bytearray) -> None:
-        """Decode a single HCA block."""
-        self._mask(block)
-        d = ClData(bytes(block), self.header_struct.block_size)
-
-        magic = d.get_bit(16)
-        if magic != 0xFFFF:
-            return
-
-        resolution_index = (d.get_bit(9) << 8) - d.get_bit(7)
-
-        for channel in self.channels:
-            channel.decode1(d, self.header_struct.comp_r09, resolution_index, self.ath_table)
-
-        for subframe_idx in range(8):
-            for channel in self.channels:
-                channel.decode2(d)
-
-            for channel in self.channels:
-                channel.decode3(
-                    self.header_struct.comp_r09,
-                    self.header_struct.comp_r08,
-                    self.header_struct.comp_r07 + self.header_struct.comp_r06,
-                    self.header_struct.comp_r05,
-                )
-
-            for j in range(self.header_struct.channel_count - 1):
-                self.channels[j].decode4(
-                    subframe_idx=subframe_idx,
-                    coeff_count=self.header_struct.comp_r05 - self.header_struct.comp_r06,
-                    start_idx=self.header_struct.comp_r06,
-                    stereo_mode=self.header_struct.comp_r07,
-                    side_channel=self.channels[1],
-                )
-
-            for channel in self.channels:
-                channel.decode5(subframe_idx)
-
-    @staticmethod
-    def _find_ffmpeg() -> str:
-        """Find ffmpeg executable in project root or PATH."""
-        project_ffmpeg = Path("ffmpeg.exe")
-        if project_ffmpeg.exists():
-            return str(project_ffmpeg.absolute())
-        return "ffmpeg"
-
-    def convert_to_wav_ffmpeg(self, output_dir: str = ".") -> str:
-        """Convert HCA audio to WAV file using ffmpeg (fast method).
-
-        This method uses ffmpeg for HCA decoding, which is significantly faster
-        than the pure Python implementation (750x speedup).
-
-        Args:
-            output_dir: Directory to write the WAV file (default: current directory)
-
-        Returns:
-            Path to the created WAV file
-
-        Raises:
-            FileNotFoundError: If ffmpeg is not found
-            subprocess.CalledProcessError: If ffmpeg conversion fails
-        """
+    def convert_to_flac(self, output_dir: str = ".") -> str:
+        """Convert HCA to FLAC using ffmpeg."""
         output_path = Path(output_dir)
         output_path.mkdir(exist_ok=True)
+        flac_file = output_path / f"{Path(self.filename).stem}.flac"
+        typer.echo(f"Converting {self.filename} to FLAC...")
 
-        wav_file = output_path / f"{self.filename[:-4]}.wav"
-
-        print(f"Converting {self.filename} to WAV...")
-
-        # Find ffmpeg executable
-        ffmpeg_cmd = self._find_ffmpeg()
-
-        # Build ffmpeg command: -i input.hca output.wav
+        # Build ffmpeg command
         cmd = [
-            ffmpeg_cmd,
-            "-i", self.file_path,
+            "ffmpeg",
             "-y",  # Overwrite output file
             "-loglevel", "error",  # Only show errors
-            str(wav_file)
+            "-i",
+            self.file_path,
+            "-compression_level 8",
+            str(flac_file),
         ]
 
-        # Execute conversion
         try:
             subprocess.run(cmd, capture_output=True, text=True, check=True)
-            print(f"Conversion complete: {wav_file}")
-            return str(wav_file)
+            return str(flac_file)
         except subprocess.CalledProcessError as e:
-            print(f"Error converting audio: {e}")
+            typer.echo(f"Error converting audio: {e}")
             if e.stderr:
-                print(f"stderr: {e.stderr}")
-            raise
+                typer.echo(f"stderr: {e.stderr}")
+            raise typer.Exit(1)
         except FileNotFoundError:
-            raise FileNotFoundError(
-                "ffmpeg not found. Please install ffmpeg to convert HCA files."
-            )
-
-        print(f"Conversion complete: {wav_file}")
-        return str(wav_file)
+            typer.echo("ffmpeg not found. Place ffmpeg in the root directory and try again.")
+            raise typer.Exit(1)
