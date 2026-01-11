@@ -935,8 +935,8 @@ class HCA:
         except subprocess.CalledProcessError as e:
             typer.echo(f"Error converting audio: {e}")
             if e.stderr:
-                typer.echo(f"stderr: {e.stderr}")
-            raise typer.Exit(1)
+                typer.echo(f"{e.stderr}")
+            raise typer.Exit(1) from e
         except FileNotFoundError:
             typer.echo("ffmpeg not found. Place ffmpeg in the root directory and try again.")
-            raise typer.Exit(1)
+            raise typer.Exit(1) from None
