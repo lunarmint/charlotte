@@ -62,67 +62,25 @@ def demux(
         if "hca" in file_paths:
             typer.echo(f"Extracted HCA: {', '.join(file_paths['hca'])}")
 
-        hca_files = collect_files(input_path, "hca")
-        for hca_file in hca_files:
-            hca = HCA(str(hca_file), key1, key2)
-            hca.decrypt()
-            flac_file = hca.convert_to_flac(output_dir=output)
-            typer.echo(f"Converted FLAC: {flac_file}")
+        process_hca(input_path, output, key1, key2)
+        process_ivf(input_path, output)
 
+def process_hca(input_path: str, output: str, key1: int, key2: int) -> None:
+    """Decrypt HCA files and convert to FLAC."""
+    hca_files = collect_files(input_path, "hca")
+    for hca_file in hca_files:
+        hca = HCA(str(hca_file), key1, key2)
+        hca.decrypt()
+        flac_file = hca.convert_to_flac(output_dir=output)
+        typer.echo(f"Converted FLAC: {flac_file}")
 
-@app.command()
-def convert_ivf(
-    input_path: Annotated[
-        str, typer.Argument(help="IVF file or directory containing IVF files")
-    ],
-    output: Annotated[
-        str | None, typer.Option("--output", "-o", help="Output file or directory")
-    ] = None,
-    codec: Annotated[
-        str, typer.Option("--codec", "-c", help="Video codec")
-    ] = "libx265",
-    crf: Annotated[
-        int, typer.Option("--crf", help="Constant Rate Factor (0-51, lower=better)")
-    ] = 25,
-    preset: Annotated[
-        str, typer.Option("--preset", "-p", help="Encoding preset")
-    ] = "slower",
-    pix_fmt: Annotated[
-        str, typer.Option("--pix-fmt", help="Pixel format")
-    ] = "yuv420p10le",
-) -> None:
-    """Convert IVF video file(s) to MP4 format with optional re-encoding."""
+def process_ivf(input_path: str, output: str) -> None:
+    """Convert IVF files to MP4."""
     ivf_files = collect_files(input_path, "ivf")
-    typer.echo(f"Found {len(ivf_files)} IVF file(s)")
-
     for ivf_file in ivf_files:
-        typer.echo(f"\nConverting: {ivf_file.name}")
         ivf = IVF(str(ivf_file))
-
-        # Determine output path
-        if output and len(ivf_files) > 1:
-            # Multiple files: treat output as directory
-            output_dir = Path(output)
-            output_dir.mkdir(exist_ok=True)
-            output_mp4 = str(output_dir / ivf_file.with_suffix(".mp4").name)
-        elif output:
-            # Single file: treat output as file path
-            output_mp4 = output
-        else:
-            # No output specified: use input filename with .mp4 extension
-            output_mp4 = None
-
-        try:
-            output_path = ivf.convert_to_mp4(
-                output_path=output_mp4,
-                codec=codec,
-                crf=crf,
-                preset=preset,
-                pixel_format=pix_fmt,
-            )
-            typer.echo(f"  Output: {output_path}")
-        except Exception as e:
-            typer.echo(f"  Error: {e}", err=True)
+        mp4_file = ivf.convert_to_mp4(output_dir=output)
+        typer.echo(f"Converted IVF: {mp4_file}")
 
 
 @app.command()

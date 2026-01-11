@@ -1,14 +1,10 @@
-"""IVF (VP9) video format decoder.
-
-This module parses IVF container files containing VP9 video frames.
-IVF is a simple container format commonly used for VP9 video codec.
-"""
-
 import struct
 import subprocess
 
 from pathlib import Path
 from typing import BinaryIO
+
+import typer
 
 
 # IVF format constants
@@ -63,32 +59,13 @@ class IVFHeader:
 
         # Skip unused padding bytes
         fp.read(header.header_length - HEADER_MIN_SIZE)
-
         return header
 
 
-class IVFFrame:
-    """IVF video frame."""
-
-    __slots__ = ("data", "length", "timestamp")
-
-    def __init__(self, data: bytes, length: int, timestamp: int):
-        self.data = data
-        self.length = length
-        self.timestamp = timestamp
-
-
 class IVF:
-    """IVF container parser for VP9 video.
-
-    Parses IVF files and extracts VP9 video frames with metadata.
-
-    Args:
-        file_path: Path to the IVF file
-    """
-
     def __init__(self, file_path: str):
         self.file_path = Path(file_path)
+        self.filename = self.file_path.name
         self.header: IVFHeader = self._parse_header()
         self.fps = self.header.framerate / self.header.timescale
         self.duration_ms = (self.header.frames / self.fps) * 1000
@@ -99,140 +76,61 @@ class IVF:
         with open(self.file_path, "rb") as fp:
             return IVFHeader.from_file(fp)
 
-    def get_info(self) -> dict[str, any]:
-        """Get video information.
-
-        Returns:
-            Dictionary with video metadata
-        """
-        return {
-            "codec": self.header.codec,
-            "width": self.header.width,
-            "height": self.header.height,
-            "fps": self.fps,
-            "frames": self.header.frames,
-            "duration_ms": self.duration_ms,
-        }
-
-    def read_frames(self) -> list[IVFFrame]:
-        """Read all video frames.
-
-        Returns:
-            List of IVFFrame objects
-        """
-        frames = []
-        with open(self.file_path, "rb") as fp:
-            fp.seek(self.header.header_length)
-
-            for _ in range(self.header.frames):
-                # Read frame header
-                frame_data = fp.read(FRAME_HEADER_SIZE)
-                if len(frame_data) < FRAME_HEADER_SIZE:
-                    break
-
-                length = struct.unpack("<I", frame_data[:4])[0]
-                timestamp = struct.unpack("<Q", frame_data[4:12])[0]
-
-                # Read frame data
-                data = fp.read(length)
-                if len(data) < length:
-                    break
-
-                frames.append(IVFFrame(length, timestamp, data))
-
-        return frames
-
-    def extract_frames(self, output_dir: str = ".") -> list[str]:
-        """Extract all frames as raw VP9 data files.
-
-        Args:
-            output_dir: Output directory for frame files
-
-        Returns:
-            List of frame file paths
-        """
+    def convert_to_mp4(self, output_dir: str = ".") -> str:
+        """Convert IVF to MP4 using ffmpeg."""
         output_path = Path(output_dir)
         output_path.mkdir(exist_ok=True)
-        base_name = self.file_path.stem
-
-        print(f"Extracting frames from {self.file_path.name}...")
-        print(f"  Resolution: {self.header.width}x{self.header.height}")
-        print(f"  FPS: {self.fps}")
-        print(f"  Frames: {self.header.frames}")
-
-        frame_files = []
-        frames = self.read_frames()
-
-        for i, frame in enumerate(frames, 1):
-            frame_path = output_path / f"{base_name}_frame_{i:06d}.vp9"
-            frame_path.write_bytes(frame.data)
-            frame_files.append(str(frame_path))
-
-            if i % 100 == 0:
-                print(f"  Extracted {i}/{self.header.frames} frames...")
-
-        print(f"Extraction complete: {len(frame_files)} frames")
-        return frame_files
-
-    def convert_to_mp4(
-        self,
-        crf: int,
-        preset: str,
-        output_path: str | None = None,
-        codec: str = "copy",
-        pixel_format: str = "yuv420p10le",
-    ) -> str:
-        if output_path is None:
-            output_path = str(self.file_path.with_suffix(".mp4"))
-
-        print(f"Converting {self.file_path.name} to MP4...")
-        print(f"  Resolution: {self.header.width}x{self.header.height}")
-        print(f"  FPS: {self.fps}")
-        if codec != "copy":
-            print(f"  Codec: {codec}, CRF: {crf}, Preset: {preset}")
-
-        # Find ffmpeg executable
-        ffmpeg_cmd = self._find_ffmpeg()
+        mp4_file = output_path / f"{Path(self.filename).stem}.mp4"
+        typer.echo(f"Converting {self.filename} to MP4...")
 
         # Build ffmpeg command
-        cmd = [ffmpeg_cmd, "-i", str(self.file_path)]
+        cmd = [
+            "ffmpeg",
+            "-y",  # Overwrite output file
+            "-loglevel", "error",  # Only show errors
+            "-i",
+            self.file_path,
+            "-c:v", "libx265",
+            "-pix_fmt", "yuv420p10le",
+            "-vf", "\"scale=out_color_matrix=bt709\"",
+            "-crf", "25",
+            "-preset", "slower",
+            "-x265-params", " \"",
+            "profile=main10",
+            ":cutree=0",
+            ":deblock=-1,-1",
+            ":no-sao=1",
+            ":tskip=1",
+            ":cbqpoffs=-2",
+            ":qcomp=0.7",
+            ":lookahead-slices=0",
+            ":keyint=300",
+            ":min-keyint=30",
+            ":max-merge=5",
+            ":ref=6",
+            ":bframes=16",
+            ":rd=4",
+            ":psy-rd=1.5",
+            ":psy-rdoq=1.0",
+            ":aq-mode=3",
+            ":aq-strength=0.8",
+            ":colorprim=1",
+            ":colormatrix=1",
+            ":transfer=1",
+            "\"",
+            str(mp4_file),
+        ]
 
-        if codec == "copy":
-            cmd.extend(["-c:v", "copy"])
-        else:
-            cmd.extend(
-                [
-                    "-c:v",
-                    codec,
-                    "-crf",
-                    str(crf),
-                    "-preset",
-                    preset,
-                    "-pix_fmt",
-                    pixel_format,
-                ]
-            )
-
-        cmd.extend(["-y", output_path])
-
-        # Execute conversion
         try:
             subprocess.run(cmd, capture_output=True, text=True, check=True)
-            print(f"Conversion complete: {output_path}")
-            return output_path
+            return str(mp4_file)
         except subprocess.CalledProcessError as e:
-            print(f"Error converting video: {e}")
-            print(f"stderr: {e.stderr}")
-            raise
+            typer.echo(f"Error converting video: {e}")
+            if e.stderr:
+                typer.echo(f"{e.stderr}")
+            raise typer.Exit(1) from e
         except FileNotFoundError:
-            raise FileNotFoundError(
-                "ffmpeg not found. Please install ffmpeg to convert videos."
+            typer.echo(
+                "ffmpeg not found. Place ffmpeg in the root directory and try again."
             )
-
-    @staticmethod
-    def _find_ffmpeg() -> str:
-        """Find ffmpeg executable in project root or PATH."""
-        project_ffmpeg = Path("ffmpeg.exe")
-        if project_ffmpeg.exists():
-            return str(project_ffmpeg.absolute())
-        return "ffmpeg"
+            raise typer.Exit(1) from None
