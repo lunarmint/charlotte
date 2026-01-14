@@ -167,19 +167,11 @@ class USM:
             paths.setdefault(stream_type, []).append(path_str)
         return streams[path_str]
 
-    def demux(
-        self,
-        output_dir: str = "."
-    ) -> dict[str, list[str]]:
+    def demux(self, output_path: Path) -> dict[str, list[str]]:
         """Demux USM file and extract streams."""
-        output_path = Path(output_dir)
-        output_path.mkdir(exist_ok=True)
-
         base_name = self.file_path.stem
         streams = {}
         file_paths = {}
-
-        print(f"Demuxing {self.file_path.name}: extracting video and audio...")
 
         with open(self.file_path, "rb") as fp:
             while True:
@@ -199,23 +191,19 @@ class USM:
                 # Process chunk based on signature
                 if header.signature == SIG_CRID:
                     pass  # Container ID chunk, skip
-
                 elif header.signature == SIG_VIDEO:
                     if header.data_type == 0:
                         self._decrypt_video(data)
-                        file_path = output_path / f"{base_name}.ivf"
+                        file_path = output_path.joinpath(f"{base_name}.ivf")
                         stream = self._open_stream(file_path, streams, file_paths, "ivf")
                         stream.write(data)
-
                 elif header.signature == SIG_AUDIO:
                     if header.data_type == 0:
-                        file_path = output_path / f"{base_name}_{header.channel_no}.hca"
+                        file_path = output_path.joinpath(f"{base_name}_{header.channel_no}.hca")
                         stream = self._open_stream(file_path, streams, file_paths, "hca")
                         stream.write(data)
-
                 elif header.signature == SIG_CUE:
                     pass  # Cue point chunk, not needed
-
                 else:
                     typer.echo(f"Unknown signature {header.signature}")
 

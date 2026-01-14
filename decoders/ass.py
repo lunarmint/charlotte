@@ -1,6 +1,8 @@
 import re
 from pathlib import Path
 
+import typer
+
 
 class ASS:
     def __init__(self, srt_file: str, lang: str, custom_style: str | None = None):
@@ -104,10 +106,35 @@ class ASS:
             style_line = self.custom_style.replace("{fontname}", self.fontname)
             ass_content.append(style_line)
         else:
-            # Default style
-            ass_content.append(
-                f"Style: Default,{self.fontname},14.5,&H00FFFFFF,&H000000FF,&H00000000,&H00000000,0,0,0,0,100.0,100.0,0.0,0.0,1,0.1,0,2,10,10,17,1"
-            )
+            # Default style matching official style.
+            style_params = [
+                "Style: Default", # Format: Name
+                f"{self.fontname}", # Fontname
+                "14.5", # Fontsize
+                "&H00FFFFFF", # PrimaryColour
+                "&H000000FF", # SecondaryColour
+                "&H00000000", # OutlineColour
+                "&H00000000", # BackColour
+                "0", # Bold
+                "0", # Italic
+                "0", # Underline
+                "0", # StrikeOut
+                "100.0", # ScaleX
+                "100.0", # ScaleY
+                "0.0", # Spacing
+                "0.0", # Angle
+                "1", # BorderStyle
+                "0.1", # Outline
+                "0", # Shadow
+                "2", # Alignment
+                "10", # MarginL
+                "10", # MarginR
+                "17", # MarginV
+                "1", # Encoding
+
+            ]
+            style = ",".join(style_params)
+            ass_content.append(style)
 
         ass_content.append("")
 
@@ -126,19 +153,11 @@ class ASS:
         with open(output_file, "w", encoding="utf-8") as f:
             f.write("\n".join(ass_content))
 
-        print(f"Converted {self.srt_file.name} to ASS format")
-
+        typer.echo(f"Converted {self.srt_file.name} to ASS format")
         return str(output_file)
 
     def _convert_tags(self, line: str) -> str:
-        """Convert HTML-like tags to ASS formatting tags.
-
-        Args:
-            line: Dialogue line with potential HTML tags
-
-        Returns:
-            Line with ASS formatting tags
-        """
+        """Convert HTML-like tags to ASS formatting tags."""
         # Convert <u>, <b>, <i> to ASS tags
         line = re.sub(r"<([ubi])>", r"{\\$11}", line)
         line = re.sub(r"</([ubi])>", r"{\\$10}", line)

@@ -76,26 +76,13 @@ class IVF:
         with open(self.file_path, "rb") as fp:
             return IVFHeader.from_file(fp)
 
-    def convert_to_mp4(self, output_dir: str = ".") -> str:
+    def convert_to_mp4(self, output_path: Path) -> str:
         """Convert IVF to MP4 using ffmpeg."""
-        output_path = Path(output_dir)
-        output_path.mkdir(exist_ok=True)
         mp4_file = output_path / f"{Path(self.filename).stem}.mp4"
         typer.echo(f"Converting {self.filename} to MP4...")
 
         # Build ffmpeg command
-        cmd = [
-            "ffmpeg",
-            "-y",  # Overwrite output file
-            "-loglevel", "error",  # Only show errors
-            "-i",
-            self.file_path,
-            "-c:v", "libx265",
-            "-pix_fmt", "yuv420p10le",
-            "-vf", "\"scale=out_color_matrix=bt709\"",
-            "-crf", "25",
-            "-preset", "slower",
-            "-x265-params", " \"",
+        x265_params = [
             "profile=main10",
             ":cutree=0",
             ":deblock=-1,-1",
@@ -110,14 +97,28 @@ class IVF:
             ":ref=6",
             ":bframes=16",
             ":rd=4",
-            ":psy-rd=1.5",
-            ":psy-rdoq=1.0",
+            ":psy-rd=2.0",
+            ":psy-rdoq=1.5",
             ":aq-mode=3",
             ":aq-strength=0.8",
             ":colorprim=1",
             ":colormatrix=1",
             ":transfer=1",
-            "\"",
+        ]
+        x265_params = "".join(x265_params)
+        cmd = [
+            "ffmpeg",
+            "-y",  # Overwrite output file
+            "-loglevel", "error",  # Only show errors
+            "-i",
+            self.file_path,
+            "-c:v", "libx265",
+            "-pix_fmt", "yuv420p10le",
+            "-vf", "scale=out_color_matrix=bt709",
+            "-crf", "12",
+            "-preset", "slower",
+            "-x265-params",
+            x265_params,
             str(mp4_file),
         ]
 

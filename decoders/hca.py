@@ -911,10 +911,8 @@ class HCA:
             struct.pack_into(">H", block, len(block) - 2, checksum)
             self.data[offset : offset + self.header_struct.block_size] = block
 
-    def convert_to_flac(self, output_dir: str = ".") -> str:
+    def convert_to_flac(self, output_path: Path) -> str:
         """Convert HCA to FLAC using ffmpeg."""
-        output_path = Path(output_dir)
-        output_path.mkdir(exist_ok=True)
         flac_file = output_path / f"{Path(self.filename).stem}.flac"
         typer.echo(f"Converting {self.filename} to FLAC...")
 
@@ -925,7 +923,7 @@ class HCA:
             "-loglevel", "error",  # Only show errors
             "-i",
             self.file_path,
-            "-compression_level 8",
+            "-compression_level", "8",
             str(flac_file),
         ]
 

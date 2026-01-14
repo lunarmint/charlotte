@@ -18,13 +18,14 @@ from utils.keys import get_decryption_key
 app = typer.Typer(help="USM video file demuxer and converter")
 
 
-def collect_files(input_path: str, extension: str) -> list[Path]:
-    path = Path(input_path)
-    if path.is_file():
-        return [path]
+def collect_files(input_path: str | Path, extension: str) -> list[Path]:
+    if isinstance(input_path, str):
+        input_path = Path(input_path)
+    if input_path.is_file():
+        return [input_path]
 
-    if path.is_dir():
-        files = list(path.glob(f"*.{extension}"))
+    if input_path.is_dir():
+        files = list(input_path.glob(f"*.{extension}"))
         if not files:
             typer.echo(f"No .{extension} files found in directory", err=True)
             raise typer.Exit(1)
@@ -33,28 +34,31 @@ def collect_files(input_path: str, extension: str) -> list[Path]:
     typer.echo(f"Error: {input_path} is not a valid file or directory", err=True)
     raise typer.Exit(1)
 
-
 @app.command()
 def demux(
     input_path: Annotated[
-        str, typer.Argument(help="USM file or directory containing USM files")
+        str, typer.Argument(help="USM file or directory containing USM files.")
     ],
     output: Annotated[
-        str, typer.Option("--output", "-o", help="Output directory")
-    ] = ".",
-    keep_original: Annotated[
-        bool, typer.Option("--keep-original", help="Do not delete decoded .ivf and .hca files when done.")
+        str, typer.Option("--output", "-o", help="Output directory.")
+    ] = "output",
+    no_cleanup: Annotated[
+        bool, typer.Option("--no-cleanup", "-nc", help="Do not delete decoded .ivf and .hca files when done.")
     ] = False,
 ) -> None:
     """Demux USM file(s) and extract video/audio tracks."""
     usm_files = collect_files(input_path, "usm")
     typer.echo(f"Found {len(usm_files)} USM file(s).")
+    output_path = Path(output)
+    output_path.mkdir(exist_ok=True)
 
     for usm_file in usm_files:
         typer.echo(f"\nProcessing: {usm_file.name}")
         key1, key2 = get_decryption_key(usm_file.name)
         usm = USM(usm_file, key1, key2)
-        file_paths = usm.demux(output_dir=output)
+        video_path = output_path.joinpath(usm_file.stem)
+        video_path.mkdir(exist_ok=True)
+        file_paths = usm.demux(output_path=video_path)
 
         # Display extracted files
         if "ivf" in file_paths:
@@ -62,218 +66,116 @@ def demux(
         if "hca" in file_paths:
             typer.echo(f"Extracted HCA: {', '.join(file_paths['hca'])}")
 
-        process_hca(input_path, output, key1, key2)
-        process_ivf(input_path, output)
+        process_hca(video_path, key1, key2)
+        process_ivf(video_path)
+        mux(video_path)
 
-def process_hca(input_path: str, output: str, key1: int, key2: int) -> None:
+def process_hca(output_path: Path, key1: int, key2: int) -> None:
     """Decrypt HCA files and convert to FLAC."""
-    hca_files = collect_files(input_path, "hca")
+    hca_files = collect_files(output_path, "hca")
     for hca_file in hca_files:
         hca = HCA(str(hca_file), key1, key2)
         hca.decrypt()
-        flac_file = hca.convert_to_flac(output_dir=output)
+        flac_file = hca.convert_to_flac(output_path=output_path)
         typer.echo(f"Converted FLAC: {flac_file}")
 
-def process_ivf(input_path: str, output: str) -> None:
+def process_ivf(output_path: Path) -> None:
     """Convert IVF files to MP4."""
-    ivf_files = collect_files(input_path, "ivf")
+    ivf_files = collect_files(output_path, "ivf")
     for ivf_file in ivf_files:
         ivf = IVF(str(ivf_file))
-        mp4_file = ivf.convert_to_mp4(output_dir=output)
+        mp4_file = ivf.convert_to_mp4(output_path=output_path)
         typer.echo(f"Converted IVF: {mp4_file}")
 
+# def process_srt() -> None:
+#     """Convert SRT/TXT subtitle file(s) to ASS format."""
+#     # Collect files with multiple extensions
+#     path = Path.cwd()
+#     subtitle_files = []
+#
+#     if path.is_file():
+#         subtitle_files = [path]
+#     elif path.is_dir():
+#         for ext in ("srt", "txt"):
+#             subtitle_files.extend(path.glob(f"*.{ext}"))
+#         if not subtitle_files:
+#             typer.echo("No .srt or .txt files found in directory", err=True)
+#             raise typer.Exit(1)
+#     else:
+#         typer.echo(f"Error: {input_path} is not a valid file or directory", err=True)
+#         raise typer.Exit(1)
+#
+#     typer.echo(f"Found {len(subtitle_files)} subtitle file(s)")
+#
+#     for sub_file in subtitle_files:
+#         typer.echo(f"\nConverting: {sub_file.name}")
+#         try:
+#             ass = ASS(str(sub_file), lang, style)
+#
+#             # Skip if already in ASS format
+#             if ass.is_ass():
+#                 typer.echo(f"  Already in ASS format, skipping")
+#                 continue
+#
+#             if ass.parse_srt():
+#                 output_file = ass.convert_to_ass(output_dir=output)
+#                 typer.echo(f"  Output: {output_file}")
+#             else:
+#                 typer.echo(f"  Failed to parse subtitle file", err=True)
+#         except Exception as e:
+#             typer.echo(f"  Error: {e}", err=True)
 
-@app.command()
-def convert_srt(
-    input_path: Annotated[
-        str, typer.Argument(help="SRT/TXT file or directory containing subtitle files")
-    ],
-    output: Annotated[
-        str, typer.Option("--output", "-o", help="Output directory")
-    ] = ".",
-    lang: Annotated[
-        str, typer.Option("--lang", "-l", help="Language code (JP, EN, etc.)")
-    ] = "EN",
-    style: Annotated[
-        str | None, typer.Option("--style", help="Custom ASS style line")
-    ] = None,
-) -> None:
-    """Convert SRT/TXT subtitle file(s) to ASS format."""
-    # Collect files with multiple extensions
-    path = Path(input_path)
-    subtitle_files = []
+def mux(output_path: Path) -> None:
+    """Mux MP4, FLAC, and fonts into MKV container using mkvmerge."""
+    import subprocess
 
-    if path.is_file():
-        subtitle_files = [path]
-    elif path.is_dir():
-        for ext in ("srt", "txt"):
-            subtitle_files.extend(path.glob(f"*.{ext}"))
-        if not subtitle_files:
-            typer.echo("No .srt or .txt files found in directory", err=True)
-            raise typer.Exit(1)
-    else:
-        typer.echo(f"Error: {input_path} is not a valid file or directory", err=True)
-        raise typer.Exit(1)
+    # Collect video and audio files
+    mp4_files = list(output_path.glob("*.mp4"))
+    flac_files = list(output_path.glob("*.flac"))
 
-    typer.echo(f"Found {len(subtitle_files)} subtitle file(s)")
+    if not mp4_files:
+        typer.echo("No MP4 files found to mux", err=True)
+        return
 
-    for sub_file in subtitle_files:
-        typer.echo(f"\nConverting: {sub_file.name}")
-        try:
-            ass = ASS(str(sub_file), lang, style)
+    # Get font files from font folder
+    font_folder = output_path / "font"
+    font_files = []
+    if font_folder.exists() and font_folder.is_dir():
+        for ext in ("ttf", "otf", "ttc"):
+            font_files.extend(font_folder.glob(f"*.{ext}"))
 
-            # Skip if already in ASS format
-            if ass.is_ass():
-                typer.echo(f"  Already in ASS format, skipping")
-                continue
+    # Mux each MP4 with corresponding FLAC and fonts
+    for mp4_file in mp4_files:
+        output_mkv = output_path / f"{mp4_file.stem}.mkv"
 
-            if ass.parse_srt():
-                output_file = ass.convert_to_ass(output_dir=output)
-                typer.echo(f"  Output: {output_file}")
-            else:
-                typer.echo(f"  Failed to parse subtitle file", err=True)
-        except Exception as e:
-            typer.echo(f"  Error: {e}", err=True)
-
-@app.command()
-def mux(
-    input_path: Annotated[
-        str, typer.Argument(help="Directory containing extracted video/audio/subtitle files")
-    ],
-    basename: Annotated[
-        str, typer.Argument(help="Base filename (without extension)")
-    ],
-    output: Annotated[
-        str | None, typer.Option("--output", "-o", help="Output MKV file path")
-    ] = None,
-    audio_langs: Annotated[
-        str, typer.Option("--audio-langs", "-al", help="Comma-separated audio language codes (e.g., 'en,ja')")
-    ] = "en,ja,ko,zh",
-    subtitle_dir: Annotated[
-        str | None, typer.Option("--subtitle-dir", help="Directory containing subtitle folders (e.g., EN/, JP/, etc.)")
-    ] = None,
-    font_ja: Annotated[
-        str | None, typer.Option("--font-ja", help="Path to Japanese font file (ja-jp.ttf)")
-    ] = None,
-    font_zh: Annotated[
-        str | None, typer.Option("--font-zh", help="Path to Chinese font file (zh-cn.ttf)")
-    ] = None,
-) -> None:
-    """Mux video, audio, and subtitle files into a single MKV container using ffmpeg."""
-    from utils.mux import FFmpegMuxer
-
-    input_dir = Path(input_path)
-    if not input_dir.is_dir():
-        typer.echo(f"Error: {input_path} is not a valid directory", err=True)
-        raise typer.Exit(1)
-
-    # Determine output path
-    if output is None:
-        output = str(input_dir / f"{basename}.mkv")
-
-    typer.echo(f"Muxing files for: {basename}")
-
-    try:
-        muxer = FFmpegMuxer(output)
-
-        # Add video track
-        video_file = input_dir / f"{basename}.ivf"
-        if video_file.exists():
-            muxer.add_video_track(str(video_file))
-            typer.echo(f"  Video: {video_file.name}")
-        else:
-            typer.echo(f"Error: Video file not found: {video_file}", err=True)
-            raise typer.Exit(1)
+        # Build mkvmerge command
+        cmd = ["mkvmerge", "-o", str(output_mkv), str(mp4_file)]
 
         # Add audio tracks
-        audio_lang_list = [lang.strip() for lang in audio_langs.split(",")]
-        audio_files = sorted(input_dir.glob(f"{basename}_*.wav"))
-
-        for audio_file in audio_files:
-            # Extract language number from filename (e.g., basename_0.wav -> 0)
-            try:
-                lang_num = int(audio_file.stem.split("_")[-1])
-                if lang_num < len(FFmpegMuxer.AUDIO_LANG):
-                    lang_code = FFmpegMuxer.AUDIO_LANG[lang_num][1]
-                    if lang_code in audio_lang_list:
-                        muxer.add_audio_track(str(audio_file), lang_num)
-                        typer.echo(f"  Audio: {audio_file.name} ({FFmpegMuxer.AUDIO_LANG[lang_num][0]})")
-            except (ValueError, IndexError):
-                typer.echo(f"  Warning: Skipping audio file with invalid format: {audio_file.name}")
-
-        # Add subtitle tracks
-        if subtitle_dir:
-            subtitle_path = Path(subtitle_dir)
-            if not subtitle_path.exists():
-                typer.echo(f"Warning: Subtitle directory not found: {subtitle_dir}", err=True)
-            else:
-                # Search for subtitle files in language subdirectories
-                subtitle_count = 0
-                for lang_code, (iso_code, lang_name) in FFmpegMuxer.SUBS_LANG.items():
-                    # Look for subtitle files in language subdirectory
-                    lang_dir = subtitle_path / lang_code
-                    if not lang_dir.exists():
-                        continue
-
-                    # Search for subtitle files matching basename
-                    srt_files = list(lang_dir.glob(f"{basename}_{lang_code}.*"))
-                    if not srt_files:
-                        continue
-
-                    # Use the first matching file (prioritize .ass, then .srt)
-                    sub_file = None
-                    for f in srt_files:
-                        if f.suffix.lower() in ['.ass', '.srt', '.txt']:
-                            sub_file = f
-                            if f.suffix.lower() == '.ass':
-                                break  # Prefer .ass files
-
-                    if not sub_file:
-                        continue
-
-                    # Convert to ASS if needed
-                    if sub_file.suffix.lower() != '.ass':
-                        typer.echo(f"  Converting subtitle: {sub_file.name}")
-                        ass = ASS(str(sub_file), lang_code)
-                        if ass.parse_srt():
-                            ass_file = ass.convert_to_ass(output_dir=str(input_dir))
-                            sub_file = Path(ass_file)
-                        else:
-                            typer.echo(f"  Warning: Failed to parse {sub_file.name}", err=True)
-                            continue
-
-                    # Add subtitle track
-                    muxer.add_subtitles_track(str(sub_file), lang_code)
-                    typer.echo(f"  Subtitle: {sub_file.name} ({lang_name})")
-                    subtitle_count += 1
-
-                if subtitle_count == 0:
-                    typer.echo(f"  Warning: No subtitles found for {basename}")
-                else:
-                    typer.echo(f"  Added {subtitle_count} subtitle track(s)")
+        for flac_file in flac_files:
+            cmd.extend([str(flac_file)])
 
         # Add font attachments
-        if font_ja and Path(font_ja).exists():
-            muxer.add_attachment(font_ja, "Japanese Font")
-            typer.echo(f"  Attachment: {Path(font_ja).name}")
-        elif Path("ja-jp.ttf").exists():
-            muxer.add_attachment("ja-jp.ttf", "Japanese Font")
-            typer.echo(f"  Attachment: ja-jp.ttf")
+        for font_file in font_files:
+            cmd.extend(["--attachment-mime-type", "application/x-truetype-font",
+                       "--attach-file", str(font_file)])
 
-        if font_zh and Path(font_zh).exists():
-            muxer.add_attachment(font_zh, "Chinese Font")
-            typer.echo(f"  Attachment: {Path(font_zh).name}")
-        elif Path("zh-cn.ttf").exists():
-            muxer.add_attachment("zh-cn.ttf", "Chinese Font")
-            typer.echo(f"  Attachment: zh-cn.ttf")
+        typer.echo(f"Muxing: {output_mkv.name}")
+        try:
+            subprocess.run(cmd, check=True, capture_output=True, text=True)
+            typer.echo(f"Created: {output_mkv}")
 
-        # Perform muxing
-        muxer.merge()
-        typer.echo(f"\nMuxing complete: {output}")
-
-    except Exception as e:
-        typer.echo(f"Error during muxing: {e}", err=True)
-        raise typer.Exit(1)
+            # Cleanup intermediate files if requested
+            # if not no_cleanup:
+            #     mp4_file.unlink()
+            #     for flac_file in flac_files:
+            #         flac_file.unlink()
+            #     typer.echo("Cleaned up intermediate files")
+        except subprocess.CalledProcessError as e:
+            typer.echo(f"Error muxing {mp4_file.name}: {e.stderr}", err=True)
+        except FileNotFoundError:
+            typer.echo("Error: mkvmerge not found. Please install mkvtoolnix.", err=True)
+            raise typer.Exit(1)
 
 
 if __name__ == "__main__":
