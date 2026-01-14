@@ -10,8 +10,6 @@ import typer
 from pathlib import Path
 from typing import BinaryIO
 
-from decoders.ivf import IVFWriter, parse_vp9_dimensions
-
 
 # USM chunk signatures
 SIG_CRID = 0x43524944  # CRID - Container ID
@@ -126,7 +124,7 @@ class USM:
         table = b"URUC"
         for i in range(MASK_SIZE):
             self.video_mask2[i] = (m[i] ^ 0xFF) & 0xFF
-            self.audio_mask[i] = table[(i >> 1) & 3] if (i & 1) else (m[i] ^ 0xFF)
+            self.audio_mask[i] = (m[i] ^ 0xFF) if (i & 1) == 0 else table[(i >> 1) & 3]
 
     def _decrypt_video(self, data: bytearray) -> None:
         """Decrypt video chunk in-place."""
@@ -140,9 +138,8 @@ class USM:
         for i in range(0x100, size):
             idx = i & 0x1F
             pos = i + VIDEO_OFFSET
-            encrypted_byte = data[pos]
             data[pos] ^= mask[idx]
-            mask[idx] = encrypted_byte ^ self.video_mask2[idx]
+            mask[idx] = (data[pos] ^ self.video_mask2[idx]) & 0xFF
 
         # Switch to mask1 and decrypt first 0x100 bytes
         mask[:MASK_SIZE] = self.video_mask1[:MASK_SIZE]
@@ -170,16 +167,8 @@ class USM:
     def demux(self, output_path: Path) -> dict[str, list[str]]:
         """Demux USM file and extract streams."""
         base_name = self.file_path.stem
-        audio_streams = {}
+        streams = {}
         file_paths = {}
-
-        # Video parameters
-        ivf_writer = None
-        video_width = None
-        video_height = None
-        video_framerate = 30000
-        video_timescale = 1000
-        frame_timestamp = 0
 
         with open(self.file_path, "rb") as fp:
             while True:
@@ -202,54 +191,21 @@ class USM:
                 elif header.signature == SIG_VIDEO:
                     if header.data_type == 0:
                         self._decrypt_video(data)
-
-                        # Extract frame data (skip VIDEO_OFFSET header bytes)
-                        frame_data = bytes(data[VIDEO_OFFSET:])
-
-                        # Parse dimensions from first keyframe
-                        if video_width is None or video_height is None:
-                            dims = parse_vp9_dimensions(frame_data)
-                            if dims:
-                                video_width, video_height = dims
-                                # Use frame_rate from header if available
-                                if header.frame_rate > 0:
-                                    video_framerate = header.frame_rate
-                                    video_timescale = 1000
-
-                                # Initialize IVF writer now that we have dimensions
-                                file_path = output_path.joinpath(f"{base_name}.ivf")
-                                ivf_writer = IVFWriter(
-                                    file_path,
-                                    video_width,
-                                    video_height,
-                                    video_framerate,
-                                    video_timescale
-                                )
-                                ivf_writer.__enter__()
-                                file_paths.setdefault("ivf", []).append(str(file_path))
-                                typer.echo(f"Video dimensions: {video_width}x{video_height}, FPS: {video_framerate}/{video_timescale}")
-
-                        # Write frame with IVF header
-                        if ivf_writer:
-                            ivf_writer.write_frame(frame_data, frame_timestamp)
-                            frame_timestamp += 1
-
+                        file_path = output_path.joinpath(f"{base_name}.ivf")
+                        stream = self._open_stream(file_path, streams, file_paths, "ivf")
+                        stream.write(data)
                 elif header.signature == SIG_AUDIO:
                     if header.data_type == 0:
                         file_path = output_path.joinpath(f"{base_name}_{header.channel_no}.hca")
-                        stream = self._open_stream(file_path, audio_streams, file_paths, "hca")
+                        stream = self._open_stream(file_path, streams, file_paths, "hca")
                         stream.write(data)
                 elif header.signature == SIG_CUE:
                     pass  # Cue point chunk, not needed
                 else:
                     typer.echo(f"Unknown signature {header.signature}")
 
-        # Close IVF writer (updates frame count in header)
-        if ivf_writer:
-            ivf_writer.__exit__(None, None, None)
-
-        # Close audio streams
-        for stream in audio_streams.values():
+        # Close all streams
+        for stream in streams.values():
             stream.close()
 
         return file_paths
