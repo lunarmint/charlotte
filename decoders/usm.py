@@ -124,7 +124,6 @@ class USM:
         table = b"URUC"
         for i in range(MASK_SIZE):
             self.video_mask2[i] = (m[i] ^ 0xFF) & 0xFF
-            # C# line 77: _audioMask[i] = (byte)((i & 1) == 1 ? table2[i >> 1 & 3] : _videoMask1[i] ^ 0xFF);
             self.audio_mask[i] = table[(i >> 1) & 3] if (i & 1) else (m[i] ^ 0xFF)
 
     def _decrypt_video(self, data: bytearray) -> None:
@@ -136,18 +135,17 @@ class USM:
         mask = bytearray(self.video_mask2)
 
         # Decrypt from offset 0x100 onwards
-        # C# line 88: mask[i & 0x1F] = (byte)((data[i + dataOffset] ^= mask[i & 0x1F]) ^ _videoMask2[i & 0x1F]);
         for i in range(0x100, size):
-            idx = (i & 0x1F)
+            idx = i & 0x1F
             pos = i + VIDEO_OFFSET
+            encrypted_byte = data[pos]
             data[pos] ^= mask[idx]
-            mask[idx] = data[pos] ^ self.video_mask2[idx]
+            mask[idx] = encrypted_byte ^ self.video_mask2[idx]
 
         # Switch to mask1 and decrypt first 0x100 bytes
-        # C# line 90: data[i + dataOffset] ^= mask[i & 0x1F] ^= data[0x100 + i + dataOffset];
         mask[:MASK_SIZE] = self.video_mask1[:MASK_SIZE]
         for i in range(0x100):
-            idx = (i & 0x1F)
+            idx = i & 0x1F
             pos = i + VIDEO_OFFSET
             pos2 = 0x100 + i + VIDEO_OFFSET
             mask[idx] ^= data[pos2]

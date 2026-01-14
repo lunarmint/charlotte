@@ -1,3 +1,4 @@
+import re
 import struct
 import subprocess
 
@@ -5,6 +6,7 @@ from pathlib import Path
 from typing import BinaryIO
 
 import typer
+from tqdm import tqdm
 
 
 # IVF format constants
@@ -84,52 +86,80 @@ class IVF:
         # Build ffmpeg command
         x265_params = [
             "profile=main10",
-            ":cutree=0",
-            ":deblock=-1,-1",
-            ":no-sao=1",
-            ":tskip=1",
-            ":cbqpoffs=-2",
-            ":qcomp=0.7",
-            ":lookahead-slices=0",
-            ":keyint=300",
-            ":min-keyint=30",
-            ":max-merge=5",
-            ":ref=6",
-            ":bframes=16",
-            ":rd=4",
-            ":psy-rd=2.0",
-            ":psy-rdoq=1.5",
-            ":aq-mode=3",
-            ":aq-strength=0.8",
-            ":colorprim=1",
-            ":colormatrix=1",
-            ":transfer=1",
+            "cutree=0",
+            "deblock=-1,-1",
+            "no-sao=1",
+            "tskip=1",
+            "cbqpoffs=-2",
+            "qcomp=0.7",
+            "lookahead-slices=0",
+            "keyint=300",
+            "min-keyint=30",
+            "max-merge=5",
+            "ref=6",
+            "bframes=16",
+            "rd=4",
+            "psy-rd=1.5",
+            "psy-rdoq=1.0",
+            "aq-mode=3",
+            "aq-strength=0.8",
+            "colorprim=1",
+            "colormatrix=1",
+            "transfer=1",
         ]
-        x265_params = "".join(x265_params)
+        x265_params = ":".join(x265_params)
         cmd = [
             "ffmpeg",
             "-y",  # Overwrite output file
-            "-loglevel", "error",  # Only show errors
+            "-progress", "pipe:1",  # Output progress to stdout
+            "-loglevel", "error",  # Only show errors on stderr
             "-i",
-            self.file_path,
+            str(self.file_path),
             "-c:v", "libx265",
             "-pix_fmt", "yuv420p10le",
-            "-vf", "scale=out_color_matrix=bt709",
+            # "-vf", "scale=out_color_matrix=bt709",
             "-crf", "12",
             "-preset", "slower",
+            "-frames", "150",
             "-x265-params",
             x265_params,
             str(mp4_file),
         ]
 
+        typer.echo(" ".join(cmd))
         try:
-            subprocess.run(cmd, capture_output=True, text=True, check=True)
+            process = subprocess.Popen(
+                cmd,
+                stdout=subprocess.PIPE,
+                stderr=None,
+                universal_newlines=True,
+            )
+
+            # Create progress bar
+            total_frames = self.header.frames
+            pbar = tqdm(total=total_frames, unit=" frames", desc="Processing")
+
+            # Parse progress output
+            frame_pattern = re.compile(r"frame=\s*(\d+)")
+            for line in process.stdout:
+                match = frame_pattern.search(line)
+                if match:
+                    current_frame = int(match.group(1))
+                    pbar.n = current_frame
+                    pbar.refresh()
+
+            pbar.close()
+
+            # Wait for process to complete
+            return_code = process.wait()
+            if return_code != 0:
+                stderr_output = process.stderr.read()
+                typer.echo(f"Error converting video: ffmpeg exited with code {return_code}")
+                if stderr_output:
+                    typer.echo(f"{stderr_output}")
+                raise typer.Exit(1)
+
             return str(mp4_file)
-        except subprocess.CalledProcessError as e:
-            typer.echo(f"Error converting video: {e}")
-            if e.stderr:
-                typer.echo(f"{e.stderr}")
-            raise typer.Exit(1) from e
         except FileNotFoundError:
             typer.echo(
                 "ffmpeg not found. Place ffmpeg in the root directory and try again."

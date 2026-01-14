@@ -8,16 +8,17 @@ readme = "README.md"
 maintainers = [{ name = "Mint" }]
 dependencies = [
     "orjson>=3.11.5",
-    "numpy>=2.4.0",
-    "pyinstaller==6.17.0",
+    "numpy>=2.4.1",
+    "pyinstaller==6.18.0",
     "pysubs2>=1.8.0",
-    "typer>=0.21.0",
+    "tqdm>=4.67.1",
+    "typer>=0.21.1",
 ]
 
 [dependency-groups]
 dev = [
     "deptry>=0.24.0",
-    "ruff>=0.14.10",
+    "ruff>=0.14.11",
 ]
 
 [tool.uv]
