@@ -221,10 +221,13 @@ class IVF:
         with open(self.file_path, "rb") as fp:
             return IVFHeader.from_file(fp)
 
-    def convert_to_mp4(self, output_path: Path) -> str:
-        """Convert IVF to MP4 using ffmpeg."""
-        mp4_file = output_path / f"{Path(self.filename).stem}.mp4"
-        typer.echo(f"Converting {self.filename} to MP4...")
+    def convert_to_mkv(self, output_path: Path, subtitle_files: list[Path] = None, font_files: list[Path] = None) -> str:
+        """Convert IVF to MKV using ffmpeg.
+
+            Legacy, just keeping it for future references. We're using VapourSynth to process.
+        """
+        mkv_file = output_path / f"{Path(self.filename).stem}.mkv"
+        typer.echo(f"Converting {self.filename} to MKV...")
 
         # Build ffmpeg command
         x265_params = [
@@ -260,21 +263,21 @@ class IVF:
             str(self.file_path),
             "-c:v", "libx265",
             "-pix_fmt", "yuv420p10le",
-            # "-vf", "scale=out_color_matrix=bt709",
-            "-crf", "12",
+            "-vf", "zscale=matrix=bt709,format=yuv420p10le",
             "-preset", "slower",
-            "-frames", "150",
+            "-crf", "12",
             "-x265-params",
             x265_params,
-            str(mp4_file),
+            str(mkv_file),
         ]
 
-        typer.echo(" ".join(cmd))
+        typer.echo(f"Command: {"".join(cmd)}")
+
         try:
             process = subprocess.Popen(
                 cmd,
                 stdout=subprocess.PIPE,
-                stderr=None,
+                stderr=subprocess.PIPE,
                 universal_newlines=True,
             )
 
@@ -302,7 +305,7 @@ class IVF:
                     typer.echo(f"{stderr_output}")
                 raise typer.Exit(1)
 
-            return str(mp4_file)
+            return str(mkv_file)
         except FileNotFoundError:
             typer.echo(
                 "ffmpeg not found. Place ffmpeg in the root directory and try again."

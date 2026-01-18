@@ -131,7 +131,6 @@ class ASS:
                 "10", # MarginR
                 "17", # MarginV
                 "1", # Encoding
-
             ]
             style = ",".join(style_params)
             ass_content.append(style)
