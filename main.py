@@ -47,7 +47,7 @@ def demux(
         typer.Option(
             "--no-cleanup",
             "-nc",
-            help="Do not delete decoded .ivf and .hca files when done.",
+            help="Do not delete decoded .ivf, .hca, and subtitle files when done.",
         ),
     ] = False,
 ) -> None:
@@ -79,6 +79,18 @@ def demux(
 
         process_srt(file_name=usm_file.stem, output_path=output_path)
         mux(output_path)
+
+        if not no_cleanup:
+            for ivf_file in collect_files(output_path, "ivf"):
+                ivf_file.unlink()
+            for flac_file in collect_files(output_path, "flac"):
+                flac_file.unlink()
+            for hca_file in collect_files(output_path, "hca"):
+                hca_file.unlink()
+            sub_folder = output_path.joinpath("subs")
+            for subtitle_file in collect_files(sub_folder, "ass"):
+                subtitle_file.unlink()
+            sub_folder.rmdir()
 
 
 if __name__ == "__main__":

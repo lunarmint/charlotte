@@ -47,7 +47,7 @@ def mux(output_path: Path) -> None:
     # Collect video and audio files
     ivf_file = output_path.joinpath(output_path.stem + ".ivf")
     flac_files = list(output_path.glob("*.flac"))
-    subtitle_files = list(output_path.joinpath("Subtitles").glob("*.ass"))
+    subtitle_files = list(output_path.joinpath("subs").glob("*.ass"))
 
     if not ivf_file.exists():
         typer.echo(f"IVF file not found: {ivf_file}", err=True)
@@ -96,14 +96,15 @@ def mux(output_path: Path) -> None:
     # Attach fonts.
     font_ja = Path.cwd().joinpath("fonts").joinpath("ja-jp.ttf")
     font_zh = Path.cwd().joinpath("fonts").joinpath("zh-cn.ttf")
-    cmd.extend(
-        [
-            "--attach-file",
-            f"{font_ja}",
-            "--attach-file",
-            f"{font_zh}",
-        ]
-    )
+    if font_ja.exists() and font_zh.exists():
+        cmd.extend(
+            [
+                "--attach-file",
+                f"{font_ja}",
+                "--attach-file",
+                f"{font_zh}",
+            ]
+        )
 
     # typer.echo(f"Command: {' '.join(cmd)}")
     typer.echo(f"Muxing: {output_mkv.name}")
@@ -117,7 +118,6 @@ def mux(output_path: Path) -> None:
 
         stdout, stderr = process.communicate()
         return_code = process.returncode
-
         if return_code != 0:
             typer.echo(f"Error muxing video: mkvmerge exited with code {return_code}")
             if stdout:
@@ -127,13 +127,6 @@ def mux(output_path: Path) -> None:
             raise typer.Exit(1)
 
         typer.echo(f"Created: {output_mkv}")
-
-        # Cleanup intermediate files if requested
-        # if not no_cleanup:
-        #     mkv_file.unlink()
-        #     for flac_file in flac_files:
-        #         flac_file.unlink()
-        #     typer.echo("Cleaned up intermediate files")
     except FileNotFoundError:
         typer.echo(
             "mkvmerge not found. Place mkvmerge in the root directory and try again."

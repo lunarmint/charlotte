@@ -76,7 +76,7 @@ class ASS:
         return True
 
     def convert_to_ass(self, output_path: Path) -> str:
-        output_path = output_path.joinpath("Subtitles")
+        output_path = output_path.joinpath("subs")
         output_path.mkdir(parents=True, exist_ok=True)
 
         output_file = output_path / (self.srt_file.stem + ".ass")
