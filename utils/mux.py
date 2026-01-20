@@ -62,7 +62,6 @@ def mux(output_path: Path) -> None:
     # Attach fonts.
     font_ja = Path.cwd().joinpath("font").joinpath("ja-jp.ttf")
     font_zh = Path.cwd().joinpath("font").joinpath("zh-cn.ttf")
-    print(font_ja, font_zh)
     if font_ja.exists() and font_zh.exists():
         cmd.extend(
             [
