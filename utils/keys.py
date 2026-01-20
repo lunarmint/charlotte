@@ -1,3 +1,4 @@
+import sys
 from pathlib import Path
 
 import orjson
@@ -35,9 +36,16 @@ def calculate_key_from_filename(filename: str) -> int:
 
 def find_key(filename: str) -> int | None:
     """Find encryption key in keys.json database."""
-    keys = Path(__file__).parent.parent.joinpath("keys.json")
+    if getattr(sys, "frozen", False):
+        # If frozen, look in the same directory as the executable
+        root_dir = Path(sys.executable).parent
+    else:
+        # If not frozen, look in the project root relative to this file
+        root_dir = Path(__file__).parent.parent
+
+    keys = root_dir.joinpath("keys.json")
     if not keys.exists():
-        typer.echo("Could not find keys.json at root directory.")
+        typer.echo(f"Could not find keys.json at {keys}.")
         raise typer.Exit(1)
 
     data = orjson.loads(keys.read_bytes())
