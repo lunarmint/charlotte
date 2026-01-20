@@ -4,42 +4,8 @@ from pathlib import Path
 
 import typer
 
-from decoders.ass import ASS
 from utils import languages
-from utils.languages import AUDIO_LANGUAGES, SUBTITLES_LANGUAGES
-
-
-def process_srt(file_name: str, output_path: Path) -> None:
-    """Convert SRT subtitle to ASS format."""
-    basename_fixes = {
-        "Cs_4131904_HaiDaoChuXian_Boy": "Cs_Activity_4001103_Summertime_Boy",
-        "Cs_4131904_HaiDaoChuXian_Girl": "Cs_Activity_4001103_Summertime_Girl",
-        "Cs_200211_WanYeXianVideo": "Cs_DQAQ200211_WanYeXianVideo",
-    }
-
-    if file_name in basename_fixes:
-        file_name = basename_fixes.get(file_name)
-
-    subtitle_files = []
-    input_path = Path.cwd().joinpath("Subtitle")
-    for lang in SUBTITLES_LANGUAGES:
-        lang_path = input_path.joinpath(lang)
-        subtitle_path = lang_path.joinpath(f"{file_name}_{lang}.srt")
-        if subtitle_path.exists():
-            subtitle_files.append(subtitle_path)
-
-    typer.echo(f"Found {len(subtitle_files)} subtitle file(s).")
-
-    for sub_file in subtitle_files:
-        lang = sub_file.stem.split("_")[-1]
-        try:
-            ass = ASS(str(sub_file), lang)
-            if ass.parse_srt():
-                ass.convert_to_ass(output_path=output_path)
-            else:
-                typer.echo("Failed to parse subtitle file.", err=True)
-        except Exception as e:
-            typer.echo(f"Error: {e}", err=True)
+from utils.languages import AUDIO_LANGUAGES
 
 
 def mux(output_path: Path) -> None:
@@ -94,8 +60,9 @@ def mux(output_path: Path) -> None:
         )
 
     # Attach fonts.
-    font_ja = Path.cwd().joinpath("fonts").joinpath("ja-jp.ttf")
-    font_zh = Path.cwd().joinpath("fonts").joinpath("zh-cn.ttf")
+    font_ja = Path.cwd().joinpath("font").joinpath("ja-jp.ttf")
+    font_zh = Path.cwd().joinpath("font").joinpath("zh-cn.ttf")
+    print(font_ja, font_zh)
     if font_ja.exists() and font_zh.exists():
         cmd.extend(
             [
@@ -106,7 +73,7 @@ def mux(output_path: Path) -> None:
             ]
         )
 
-    # typer.echo(f"Command: {' '.join(cmd)}")
+    # typer.echo(f"Command: {" ".join(cmd)}")
     typer.echo(f"Muxing: {output_mkv.name}")
     try:
         process = subprocess.Popen(

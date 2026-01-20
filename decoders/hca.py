@@ -409,10 +409,9 @@ class HCA:
     """
 
     def __init__(
-        self, file_path: str, key1: int | None = None, key2: int | None = None
+        self, file_path: Path, key1: int | None = None, key2: int | None = None
     ):
         self.file_path = Path(file_path)
-        self.filename = self.file_path.name
         self.key1 = key1 or bytes(4)
         self.key2 = key2 or bytes(4)
         self.ciph_table = bytearray(0x100)
@@ -897,8 +896,6 @@ class HCA:
         if self.header_struct.ciph_type == 0:
             return
 
-        typer.echo("Decrypting HCA content...")
-
         for i in range(self.header_struct.block_count):
             offset = i * self.header_struct.block_size
             block = bytearray(
@@ -911,9 +908,9 @@ class HCA:
             struct.pack_into(">H", block, len(block) - 2, checksum)
             self.data[offset : offset + self.header_struct.block_size] = block
 
-    def convert_to_flac(self, output_path: Path) -> str:
+    def convert_to_flac(self, output_path: Path) -> Path:
         """Convert HCA to FLAC using ffmpeg."""
-        flac_file = output_path / f"{self.file_path.stem}.flac"
+        flac_file = output_path.joinpath(f"{self.file_path.stem}.flac")
 
         # Build ffmpeg command
         cmd = [
@@ -928,7 +925,7 @@ class HCA:
 
         try:
             subprocess.run(cmd, capture_output=True, text=True, check=True)
-            return str(flac_file)
+            return flac_file
         except subprocess.CalledProcessError as e:
             typer.echo(f"Error converting audio: {e}")
             if e.stderr:

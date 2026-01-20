@@ -158,13 +158,12 @@ class USM:
 
     def _open_stream(self, file_path: Path, streams: dict, paths: dict, stream_type: str) -> BinaryIO:
         """Open or retrieve existing file stream."""
-        path_str = str(file_path)
-        if path_str not in streams:
-            streams[path_str] = open(file_path, "wb")
-            paths.setdefault(stream_type, []).append(path_str)
-        return streams[path_str]
+        if file_path not in streams:
+            streams[file_path] = open(file_path, "wb")
+            paths.setdefault(stream_type, []).append(file_path)
+        return streams[file_path]
 
-    def demux(self, output_path: Path) -> dict[str, list[str]]:
+    def demux(self, output_path: Path) -> dict[str, list[Path]]:
         """Demux USM file and extract streams."""
         base_name = self.file_path.stem
         streams = {}

@@ -8,10 +8,12 @@ from typing import Annotated
 
 import typer
 
+from decoders.ass import ASS
 from decoders.hca import HCA
 from decoders.usm import USM
 from utils.keys import get_decryption_key
-from utils.mux import mux, process_srt
+from utils.languages import SUBTITLES_LANGUAGES
+from utils.mux import mux
 
 
 app = typer.Typer(help="USM video file demuxer and converter")
@@ -36,9 +38,10 @@ def collect_files(input_path: str | Path, extension: str) -> list[Path]:
 
 @app.command()
 def demux(
-    input_path: Annotated[
+    usm_path: Annotated[
         str, typer.Argument(help="USM file or directory containing USM files.")
     ],
+    subtitle_path: Annotated[str, typer.Option("--subtitle-path", help="Subtitle output directory.")] = None,
     output: Annotated[
         str, typer.Option("--output", "-o", help="Output directory.")
     ] = "output",
@@ -51,8 +54,8 @@ def demux(
         ),
     ] = False,
 ) -> None:
-    """Demux USM file(s) and extract video/audio tracks."""
-    usm_files = collect_files(input_path, "usm")
+    """Demux USM file(s) to extract video/audio tracks and then mux them into an MKV container."""
+    usm_files = collect_files(usm_path, "usm")
     typer.echo(f"Found {len(usm_files)} USM file(s).")
     Path(output).mkdir(exist_ok=True)
 
@@ -64,33 +67,52 @@ def demux(
         output_path.mkdir(exist_ok=True)
         file_paths = usm.demux(output_path=output_path)
 
-        # Display extracted files
-        if "ivf" in file_paths:
-            typer.echo(f"Extracted IVF: {', '.join(file_paths['ivf'])}")
-        if "hca" in file_paths:
-            typer.echo(f"Extracted HCA: {', '.join(file_paths['hca'])}")
-
-        hca_files = collect_files(output_path, "hca")
-        for hca_file in hca_files:
-            hca = HCA(str(hca_file), key1, key2)
+        for hca_file in file_paths["hca"]:
+            hca = HCA(hca_file, key1, key2)
             hca.decrypt()
             flac_file = hca.convert_to_flac(output_path=output_path)
-            typer.echo(f"Converted FLAC: {flac_file}")
+            file_paths.setdefault("flac", []).append(flac_file)
 
-        process_srt(file_name=usm_file.stem, output_path=output_path)
+        basename_fixes = {
+            "Cs_4131904_HaiDaoChuXian_Boy": "Cs_Activity_4001103_Summertime_Boy",
+            "Cs_4131904_HaiDaoChuXian_Girl": "Cs_Activity_4001103_Summertime_Girl",
+            "Cs_200211_WanYeXianVideo": "Cs_DQAQ200211_WanYeXianVideo",
+        }
+
+        usm_filename = usm_file.stem
+        if usm_filename in basename_fixes:
+            usm_filename = basename_fixes.get(usm_filename)
+
+        subtitle_files = []
+        input_path = Path.cwd().joinpath("Subtitle")
+        for lang in SUBTITLES_LANGUAGES:
+            lang_path = input_path.joinpath(lang)
+            subtitle_path = lang_path.joinpath(f"{usm_filename}_{lang}.srt")
+            if subtitle_path.exists():
+                subtitle_files.append(subtitle_path)
+
+        typer.echo(f"Found {len(subtitle_files)} subtitle file(s).")
+
+        for sub_file in subtitle_files:
+            lang = sub_file.stem.split("_")[-1]
+            try:
+                ass = ASS(str(sub_file), lang)
+                if ass.parse_srt():
+                    ass_path = ass.convert_to_ass(output_path=output_path)
+                    file_paths.setdefault("ass", []).append(ass_path)
+                else:
+                    typer.echo("Failed to parse subtitle file.", err=True)
+            except Exception as e:
+                typer.echo(f"Error: {e}", err=True)
+
         mux(output_path)
 
         if not no_cleanup:
-            for ivf_file in collect_files(output_path, "ivf"):
-                ivf_file.unlink()
-            for flac_file in collect_files(output_path, "flac"):
-                flac_file.unlink()
-            for hca_file in collect_files(output_path, "hca"):
-                hca_file.unlink()
-            sub_folder = output_path.joinpath("subs")
-            for subtitle_file in collect_files(sub_folder, "ass"):
-                subtitle_file.unlink()
-            sub_folder.rmdir()
+            for keys, value in file_paths.items():
+                for file in value:
+                    file.unlink()
+
+            output_path.joinpath("subs").rmdir()
 
 
 if __name__ == "__main__":

@@ -31,14 +31,14 @@ class DecodeTables:
         0x3FC238D2, 0x400164D2, 0x402C6897, 0x4065B907, 0x40990B88, 0x40CBEC15, 0x4107DB35, 0x413504F3,
     ]
 
-    DECODE1_VALUE = [struct.unpack('>f', struct.pack('>I', x))[0] for x in _DECODE1_VALUE_INT]
+    DECODE1_VALUE = [struct.unpack(">f", struct.pack(">I", x))[0] for x in _DECODE1_VALUE_INT]
 
     _DECODE1_SCALE_INT = [
         0x00000000, 0x3F2AAAAB, 0x3ECCCCCD, 0x3E924925, 0x3E638E39, 0x3E3A2E8C, 0x3E1D89D9, 0x3E088889,
         0x3D842108, 0x3D020821, 0x3C810204, 0x3C008081, 0x3B804020, 0x3B002008, 0x3A801002, 0x3A000801,
     ]
 
-    DECODE1_SCALE = [struct.unpack('>f', struct.pack('>I', x))[0] for x in _DECODE1_SCALE_INT]
+    DECODE1_SCALE = [struct.unpack(">f", struct.pack(">I", x))[0] for x in _DECODE1_SCALE_INT]
 
     # Decode 2 tables
     DECODE2_LIST1 = bytes([
@@ -79,7 +79,7 @@ class DecodeTables:
         0x4B11C3D3, 0x4B4238D2, 0x4B8164D2, 0x4BAC6897, 0x4BE5B907, 0x4C190B88, 0x4C4BEC15, 0x00000000,
     ]
 
-    DECODE3_LIST = [struct.unpack('>f', struct.pack('>I', x))[0] for x in _DECODE3_LIST_INT]
+    DECODE3_LIST = [struct.unpack(">f", struct.pack(">I", x))[0] for x in _DECODE3_LIST_INT]
 
     # Decode 4 tables
     _DECODE4_LIST_INT = [
@@ -87,7 +87,7 @@ class DecodeTables:
         0x3F5B6DB7, 0x3F36DB6E, 0x3F124925, 0x3EDB6DB7, 0x3E924925, 0x3E124925, 0x00000000, 0x00000000,
     ]
 
-    DECODE4_LIST = [struct.unpack('>f', struct.pack('>I', x))[0] for x in _DECODE4_LIST_INT]
+    DECODE4_LIST = [struct.unpack(">f", struct.pack(">I", x))[0] for x in _DECODE4_LIST_INT]
 
     # Decode 5 tables - these are 2D arrays
     _DECODE5_LIST1_INT = [
@@ -170,7 +170,7 @@ class DecodeTables:
         ],
     ]
 
-    DECODE5_LIST1 = [[struct.unpack('>f', struct.pack('>I', x))[0] for x in row] for row in _DECODE5_LIST1_INT]
+    DECODE5_LIST1 = [[struct.unpack(">f", struct.pack(">I", x))[0] for x in row] for row in _DECODE5_LIST1_INT]
 
     _DECODE5_LIST2_INT = [
         # Row 0
@@ -252,7 +252,7 @@ class DecodeTables:
         ],
     ]
 
-    DECODE5_LIST2 = [[struct.unpack('>f', struct.pack('>I', x))[0] for x in row] for row in _DECODE5_LIST2_INT]
+    DECODE5_LIST2 = [[struct.unpack(">f", struct.pack(">I", x))[0] for x in row] for row in _DECODE5_LIST2_INT]
 
     _DECODE5_LIST3_INT = [
         # Row 0
@@ -279,4 +279,4 @@ class DecodeTables:
         ],
     ]
 
-    DECODE5_LIST3 = [[struct.unpack('>f', struct.pack('>I', x))[0] for x in row] for row in _DECODE5_LIST3_INT]
+    DECODE5_LIST3 = [[struct.unpack(">f", struct.pack(">I", x))[0] for x in row] for row in _DECODE5_LIST3_INT]

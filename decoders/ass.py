@@ -75,7 +75,7 @@ class ASS:
 
         return True
 
-    def convert_to_ass(self, output_path: Path) -> str:
+    def convert_to_ass(self, output_path: Path) -> Path:
         output_path = output_path.joinpath("subs")
         output_path.mkdir(parents=True, exist_ok=True)
 
@@ -157,7 +157,7 @@ class ASS:
         with open(output_file, "w", encoding="utf-8") as f:
             f.write("\n".join(ass_content))
 
-        return str(output_file)
+        return output_file
 
     def _convert_tags(self, line: str) -> str:
         """Convert HTML-like tags to ASS formatting tags."""
