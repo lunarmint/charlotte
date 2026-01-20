@@ -1,224 +1,141 @@
-"""FFmpeg-based muxer for combining video, audio, and subtitle streams into MKV container.
-
-This module provides functionality to mux VP9 video (IVF), WAV audio, and ASS subtitles
-into a single Matroska (MKV) container file using ffmpeg.
-"""
-
 import subprocess
+
 from pathlib import Path
 
 import typer
 
+from decoders.ass import ASS
+from utils import languages
+from utils.languages import AUDIO_LANGUAGES, SUBTITLES_LANGUAGES
 
-class FFmpegMuxer:
-    """FFmpeg-based muxer for creating MKV containers.
 
-    Combines video, audio, subtitle, and attachment files into a single MKV file
-    using ffmpeg with proper metadata and track mapping.
-
-    Args:
-        output_path: Path to the output MKV file
-        ffmpeg_path: Path to ffmpeg executable (default: searches in PATH and project root)
-    """
-
-    # Language mappings (index -> (name, ISO 639-2 code))
-    AUDIO_LANG = [
-        ("English", "en"),
-        ("Japanese", "ja"),
-        ("Korean", "ko"),
-        ("Chinese", "zh"),
-    ]
-
-    # Subtitle language mappings (Genshin Impact code -> (ISO 639-2, name))
-    SUBS_LANG = {
-        "EN": ("en", "English"),
-        "CHS": ("zh", "Chinese (Simplified)"),
-        "CHT": ("zh", "Chinese (Traditional)"),
-        "DE": ("de", "German"),
-        "ES": ("es", "Spanish"),
-        "FR": ("fr", "French"),
-        "ID": ("id", "Indonesian"),
-        "IT": ("it", "Italian"),
-        "JP": ("ja", "Japanese"),
-        "KR": ("ko", "Korean"),
-        "PT": ("pt", "Portuguese"),
-        "RU": ("ru", "Russian"),
-        "TH": ("th", "Thai"),
-        "TR": ("tr", "Turkish"),
-        "VI": ("vi", "Vietnamese"),
+def process_srt(file_name: str, output_path: Path) -> None:
+    """Convert SRT subtitle to ASS format."""
+    basename_fixes = {
+        "Cs_4131904_HaiDaoChuXian_Boy": "Cs_Activity_4001103_Summertime_Boy",
+        "Cs_4131904_HaiDaoChuXian_Girl": "Cs_Activity_4001103_Summertime_Girl",
+        "Cs_200211_WanYeXianVideo": "Cs_DQAQ200211_WanYeXianVideo",
     }
 
-    def __init__(self, output_path: str, ffmpeg_path: str | None = None):
-        self.output_path = output_path
-        self.ffmpeg_path = ffmpeg_path or self._find_ffmpeg()
+    if file_name in basename_fixes:
+        file_name = basename_fixes.get(file_name)
 
-        # Track counters
-        self.video_count = 0
-        self.audio_count = 0
-        self.subs_count = 0
-        self.attachment_count = 0
+    subtitle_files = []
+    input_path = Path.cwd().joinpath("Subtitle")
+    for lang in SUBTITLES_LANGUAGES:
+        lang_path = input_path.joinpath(lang)
+        subtitle_path = lang_path.joinpath(f"{file_name}_{lang}.srt")
+        if subtitle_path.exists():
+            subtitle_files.append(subtitle_path)
 
-        # Command components
-        self.input_options: list[str] = []
-        self.map_options: list[str] = []
-        self.metadata_options: list[str] = []
+    typer.echo(f"Found {len(subtitle_files)} subtitle file(s).")
 
-    @staticmethod
-    def _find_ffmpeg() -> str:
-        """Find ffmpeg executable in project root or PATH."""
-        project_ffmpeg = Path("ffmpeg.exe")
-        if project_ffmpeg.exists():
-            return str(project_ffmpeg.absolute())
-        return "ffmpeg"
-
-    def add_video_track(self, video_file: str) -> None:
-        """Add video track to the mux.
-
-        Args:
-            video_file: Path to IVF video file
-
-        Raises:
-            FileNotFoundError: If video file doesn't exist
-        """
-        if not Path(video_file).exists():
-            raise FileNotFoundError(f"Video file {video_file} not found.")
-
-        name = Path(video_file).stem
-        self.input_options.append(f"-i")
-        self.input_options.append(video_file)
-
-        track_index = self.video_count + self.audio_count + self.subs_count
-        self.map_options.extend(["-map", str(track_index)])
-        self.metadata_options.extend(
-            [
-                f"-metadata:s:v:{self.video_count}",
-                "language=und",
-                f"-metadata:s:v:{self.video_count}",
-                f"title={name}",
-            ]
-        )
-        self.video_count += 1
-
-    def add_audio_track(self, audio_file: str, lang: int) -> None:
-        """Add audio track to the mux.
-
-        Args:
-            audio_file: Path to WAV audio file
-            lang: Language index (0-3) corresponding to AUDIO_LANG mapping
-
-        Raises:
-            FileNotFoundError: If audio file doesn't exist
-            ValueError: If language index is invalid
-        """
-        if not Path(audio_file).exists():
-            raise FileNotFoundError(f"Audio file {audio_file} not found.")
-        if not 0 <= lang < len(self.AUDIO_LANG):
-            raise ValueError(f"Language number {lang} not supported")
-
-        lang_name, lang_code = self.AUDIO_LANG[lang]
-
-        self.input_options.append("-i")
-        self.input_options.append(audio_file)
-
-        track_index = self.video_count + self.audio_count + self.subs_count
-        self.map_options.extend(["-map", str(track_index)])
-        self.metadata_options.extend(
-            [
-                f"-metadata:s:a:{self.audio_count}",
-                f"language={lang_code}",
-                f"-metadata:s:a:{self.audio_count}",
-                f"title={lang_name}",
-            ]
-        )
-        self.audio_count += 1
-
-    def add_subtitles_track(self, sub_file: str, language: str) -> None:
-        """Add subtitle track to the mux.
-
-        Args:
-            sub_file: Path to ASS subtitle file
-            language: Language code (e.g., "EN", "JP", "CHS")
-
-        Raises:
-            FileNotFoundError: If subtitle file doesn't exist
-            ValueError: If language code is not supported
-        """
-        if language not in self.SUBS_LANG:
-            raise ValueError(f"Language code {language} isn't supported...")
-
-        self.input_options.append("-i")
-        self.input_options.append(sub_file)
-
-        lang_code, lang_name = self.SUBS_LANG[language]
-
-        track_index = self.video_count + self.audio_count + self.subs_count
-        self.map_options.extend(["-map", str(track_index)])
-        self.metadata_options.extend(
-            [
-                f"-metadata:s:s:{self.subs_count}",
-                f"language={lang_code}",
-                f"-metadata:s:s:{self.subs_count}",
-                f"title={lang_name}",
-            ]
-        )
-        self.subs_count += 1
-
-    def add_attachment(self, attachment_file: str, description: str) -> None:
-        """Add attachment (e.g., font file) to the mux.
-
-        Args:
-            attachment_file: Path to attachment file
-            description: Description of the attachment
-
-        Raises:
-            FileNotFoundError: If attachment file doesn't exist
-        """
-        if not Path(attachment_file).exists():
-            raise FileNotFoundError(f"Attachment file {attachment_file} not found.")
-
-        self.input_options.append("-attach")
-        self.input_options.append(attachment_file)
-        self.metadata_options.extend(
-            [
-                f"-metadata:s:t:{self.attachment_count}",
-                "mimetype=application/x-truetype-font",
-                f"-metadata:s:t:{self.attachment_count}",
-                f"description={description}",
-            ]
-        )
-        self.attachment_count += 1
-
-    def merge(self) -> None:
-        """Execute the muxing process.
-
-        Builds and runs the ffmpeg command to create the final MKV file.
-
-        Raises:
-            subprocess.CalledProcessError: If ffmpeg command fails
-            FileNotFoundError: If ffmpeg executable is not found
-        """
-        # Build command
-        cmd = [self.ffmpeg_path, "-y", "-loglevel", "error", "-nostats"]
-        cmd.extend(self.input_options)
-        cmd.extend(self.map_options)
-        cmd.extend(self.metadata_options)
-        cmd.extend(["-c", "copy", self.output_path])
-
-        print(f"Running ffmpeg muxing...")
-
-        # Execute command
+    for sub_file in subtitle_files:
+        lang = sub_file.stem.split("_")[-1]
         try:
-            result = subprocess.run(
-                cmd, capture_output=True, text=True, check=True
-            )
-            if result.stderr:
-                print(f"ffmpeg output: {result.stderr}")
-        except subprocess.CalledProcessError as e:
-            print(f"Error during muxing: {e}")
-            if e.stderr:
-                print(f"stderr: {e.stderr}")
-            raise
-        except FileNotFoundError:
-            raise FileNotFoundError(
-                "ffmpeg not found. Please install ffmpeg to mux videos."
-            )
+            ass = ASS(str(sub_file), lang)
+            if ass.parse_srt():
+                ass.convert_to_ass(output_path=output_path)
+            else:
+                typer.echo("Failed to parse subtitle file.", err=True)
+        except Exception as e:
+            typer.echo(f"Error: {e}", err=True)
+
+
+def mux(output_path: Path) -> None:
+    """Mux IVF video and FLAC audio into MKV container using mkvmerge."""
+    # Collect video and audio files
+    ivf_file = output_path.joinpath(output_path.stem + ".ivf")
+    flac_files = list(output_path.glob("*.flac"))
+    subtitle_files = list(output_path.joinpath("Subtitles").glob("*.ass"))
+
+    if not ivf_file.exists():
+        typer.echo(f"IVF file not found: {ivf_file}", err=True)
+        return
+
+    if not flac_files:
+        typer.echo("No FLAC files found to mux.", err=True)
+        return
+
+    output_mkv = output_path / f"{output_path.stem}.mkv"
+
+    # Build mkvmerge command
+    cmd = ["mkvmerge", "-o", str(output_mkv), str(ivf_file)]
+
+    # Put JP track with EN sub to the top.
+    flac_files.sort(key=lambda x: 0 if "_2.flac" in str(x) else 1)
+    subtitle_files.sort(key=lambda x: 0 if "_EN.ass" in str(x) else 1)
+
+    for flac_file in flac_files:
+        index = flac_file.stem.split("_")[-1]
+        cmd.extend(
+            [
+                "--language",
+                f"0:{AUDIO_LANGUAGES.get(index, 'und')}",
+                "--default-track-flag",
+                f"0:{1 if AUDIO_LANGUAGES.get(index, 'und') == 'ja' else 0}",
+                str(flac_file),
+            ]
+        )
+
+    # Add subtitles.
+    for subtitle_file in subtitle_files:
+        subtitle_lang = subtitle_file.stem.split("_")[-1]
+        cmd.extend(
+            [
+                "--language",
+                f"0:{languages.get_language(subtitle_lang)}",
+                "--default-track-flag",
+                f"0:{1 if '_EN' in str(subtitle_file) else 0}",
+                "--forced-display-flag",
+                f"0:{1 if '_EN' in str(subtitle_file) else 0}",
+                str(subtitle_file),
+            ]
+        )
+
+    # Attach fonts.
+    font_ja = Path.cwd().joinpath("fonts").joinpath("ja-jp.ttf")
+    font_zh = Path.cwd().joinpath("fonts").joinpath("zh-cn.ttf")
+    cmd.extend(
+        [
+            "--attach-file",
+            f"{font_ja}",
+            "--attach-file",
+            f"{font_zh}",
+        ]
+    )
+
+    # typer.echo(f"Command: {' '.join(cmd)}")
+    typer.echo(f"Muxing: {output_mkv.name}")
+    try:
+        process = subprocess.Popen(
+            cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            universal_newlines=True,
+        )
+
+        stdout, stderr = process.communicate()
+        return_code = process.returncode
+
+        if return_code != 0:
+            typer.echo(f"Error muxing video: mkvmerge exited with code {return_code}")
+            if stdout:
+                typer.echo(f"stdout: {stdout}")
+            if stderr:
+                typer.echo(f"stderr: {stderr}")
+            raise typer.Exit(1)
+
+        typer.echo(f"Created: {output_mkv}")
+
+        # Cleanup intermediate files if requested
+        # if not no_cleanup:
+        #     mkv_file.unlink()
+        #     for flac_file in flac_files:
+        #         flac_file.unlink()
+        #     typer.echo("Cleaned up intermediate files")
+    except FileNotFoundError:
+        typer.echo(
+            "mkvmerge not found. Place mkvmerge in the root directory and try again."
+        )
+        raise typer.Exit(1) from None

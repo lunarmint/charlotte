@@ -913,8 +913,7 @@ class HCA:
 
     def convert_to_flac(self, output_path: Path) -> str:
         """Convert HCA to FLAC using ffmpeg."""
-        flac_file = output_path / f"{Path(self.filename).stem}.flac"
-        typer.echo(f"Converting {self.filename} to FLAC...")
+        flac_file = output_path / f"{self.file_path.stem}.flac"
 
         # Build ffmpeg command
         cmd = [
