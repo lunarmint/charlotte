@@ -41,7 +41,6 @@ def demux(
     usm_path: Annotated[
         str, typer.Argument(help="USM file or directory containing USM files.")
     ],
-    subtitle_path: Annotated[str, typer.Option("--subtitle-path", help="Subtitle output directory.")] = None,
     output: Annotated[
         str, typer.Option("--output", "-o", help="Output directory.")
     ] = "output",
