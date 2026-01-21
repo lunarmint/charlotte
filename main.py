@@ -111,7 +111,9 @@ def demux(
                 for file in value:
                     file.unlink()
 
-            output_path.joinpath("subs").rmdir()
+            output_path.joinpath("subs")
+            if output_path.joinpath("subs").is_dir():
+                output_path.joinpath("subs").rmdir()
 
 
 if __name__ == "__main__":
