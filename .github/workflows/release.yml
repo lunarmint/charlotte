@@ -25,7 +25,7 @@ jobs:
         run: uv sync --no-dev
 
       - name: Build with PyInstaller
-        run: uv run pyinstaller --onefile --name charlotte main.py
+        run: uv run pyinstaller charlotte.spec
 
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
