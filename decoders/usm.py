@@ -200,6 +200,8 @@ class USM:
                         stream.write(data)
                 elif header.signature == SIG_CUE:
                     pass  # Cue point chunk, not needed
+                elif header.signature in (0x40415050, 0x40414C50, 0x40534254):
+                    pass  # @APP, @ALP, @SBT chunks, metadata or padding
                 else:
                     typer.echo(f"Unknown signature {header.signature}")
 
