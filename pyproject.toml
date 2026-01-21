@@ -10,7 +10,6 @@ dependencies = [
     "orjson>=3.11.5",
     "numpy>=2.4.1",
     "pyinstaller==6.18.0",
-    "pysubs2>=1.8.0",
     "tqdm>=4.67.1",
     "typer>=0.21.1",
 ]
