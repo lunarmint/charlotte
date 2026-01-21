@@ -1,8 +1,8 @@
 import sys
 import tempfile
-import urllib
 
 from pathlib import Path
+from urllib import request
 
 import orjson
 import typer
@@ -42,7 +42,7 @@ def get_upstream_keys(target_path: Path) -> bool:
     keys_url = "https://raw.githubusercontent.com/lunarmint/charlotte/refs/heads/master/keys.json"
     try:
         typer.echo("Attempting to fetch keys.json from upstream...")
-        with urllib.request.urlopen(keys_url) as response:
+        with request.urlopen(keys_url) as response:
             if response.status == 200:
                 data = response.read()
                 target_path.write_bytes(data)
@@ -100,16 +100,19 @@ def get_key(filename: str) -> int | None:
                 new_key = find_key_from_file(retry_data, filename)
                 # Check if content is different.
                 if retry_data != data:
-                    typer.echo("Upstream keys.json is different. Updating local file.")
-                    keys.write_bytes(temp_path.read_bytes())
                     if new_key:
                         typer.confirm(
-                            "New key found. Update local keys.json?", abort=True
+                            "New key(s) found. Overwrite local keys.json?",
+                            default=False,
+                            abort=True,
                         )
+                        typer.echo("Resuming demux...")
+                        keys.write_bytes(temp_path.read_bytes())
                         return new_key
                 else:
                     typer.echo(
-                        "Upstream keys.json is identical to local file. Please check back later when new keys are available!"
+                        "Upstream keys.json is identical to local file. Please check back later "
+                        "when new keys are available!"
                     )
         finally:
             if temp_path.exists():
@@ -131,9 +134,6 @@ def get_decryption_key(filename: str) -> tuple[bytes, bytes] | None:
     basename = Path(filename).stem
     key1 = calculate_key_from_filename(basename)
     key2 = get_key(basename)
-    if key2 is None:
-        typer.echo(f"No key found for {basename}.")
-        raise typer.Exit(1)
 
     # finalKey = (key1 + key2) & 0xFFFFFFFFFFFFFF
     final_key = 0x100000000000000
