@@ -1,4 +1,7 @@
 import sys
+import tempfile
+import urllib
+
 from pathlib import Path
 
 import orjson
@@ -34,32 +37,86 @@ def calculate_key_from_filename(filename: str) -> int:
     return result
 
 
-def find_key(filename: str) -> int | None:
-    """Find encryption key in keys.json database."""
-    if getattr(sys, "frozen", False):
-        # If frozen, look in the same directory as the executable
-        root_dir = Path(sys.executable).parent
-    else:
-        # If not frozen, look in the project root relative to this file
-        root_dir = Path(__file__).parent.parent
+def get_upstream_keys(target_path: Path) -> bool:
+    """Fetch keys.json from upstream repository."""
+    keys_url = "https://raw.githubusercontent.com/lunarmint/charlotte/refs/heads/master/keys.json"
+    try:
+        typer.echo("Attempting to fetch keys.json from upstream...")
+        with urllib.request.urlopen(keys_url) as response:
+            if response.status == 200:
+                data = response.read()
+                target_path.write_bytes(data)
+                typer.echo("Successfully updated keys.json.")
+                return True
+    except Exception as e:
+        typer.echo(f"Failed to download keys.json: {e}")
+    return False
 
-    keys = root_dir.joinpath("keys.json")
-    if not keys.exists():
-        typer.echo(f"Could not find keys.json at {keys}.")
-        raise typer.Exit(1)
 
-    data = orjson.loads(keys.read_bytes())
-
+def find_key_from_file(data: dict, filename: str) -> int | None:
     for version in data["list"]:
         if "videos" in version and filename in version["videos"]:
-            key = version.get("key", None)
-            return key
+            return version.get("key", None)
 
         if "videoGroups" in version:
             for group in version["videoGroups"]:
                 if filename in group["videos"]:
-                    key = group.get("key", None)
-                    return key
+                    return group.get("key", None)
+    return None
+
+
+def get_key(filename: str) -> int | None:
+    """Find encryption key in keys.json."""
+    if getattr(sys, "frozen", False):
+        root_dir = Path(sys.executable).parent
+    else:
+        root_dir = Path(__file__).parent.parent
+
+    keys = root_dir.joinpath("keys.json")
+
+    if not keys.exists():
+        typer.echo(f"keys.json not found at {keys}.")
+        if not get_upstream_keys(keys):
+            typer.echo("Failed to fetch keys.json.")
+            raise typer.Exit(1)
+
+    try:
+        data = orjson.loads(keys.read_bytes())
+        key = find_key_from_file(data, filename)
+        if key:
+            return key
+
+        # Key not found locally, try checking upstream
+        typer.echo(f"Key for {filename} not found. Checking upstream...")
+
+        # Download to a temporary file first
+        with tempfile.NamedTemporaryFile(delete=False) as tmp_file:
+            temp_path = Path(tmp_file.name)
+
+        try:
+            if get_upstream_keys(temp_path):
+                # Check if the new file actually has the key or is different.
+                retry_data = orjson.loads(temp_path.read_bytes())
+                new_key = find_key_from_file(retry_data, filename)
+                # Check if content is different.
+                if retry_data != data:
+                    typer.echo("Upstream keys.json is different. Updating local file.")
+                    keys.write_bytes(temp_path.read_bytes())
+                    if new_key:
+                        typer.confirm(
+                            "New key found. Update local keys.json?", abort=True
+                        )
+                        return new_key
+                else:
+                    typer.echo(
+                        "Upstream keys.json is identical to local file. Please check back later when new keys are available!"
+                    )
+        finally:
+            if temp_path.exists():
+                temp_path.unlink()
+
+    except orjson.JSONDecodeError:
+        typer.echo("Error decoding keys.json.")
 
     return None
 
@@ -73,7 +130,7 @@ def get_decryption_key(filename: str) -> tuple[bytes, bytes] | None:
     # Remove extension if present.
     basename = Path(filename).stem
     key1 = calculate_key_from_filename(basename)
-    key2 = find_key(basename)
+    key2 = get_key(basename)
     if key2 is None:
         typer.echo(f"No key found for {basename}.")
         raise typer.Exit(1)
