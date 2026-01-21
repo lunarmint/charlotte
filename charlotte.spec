@@ -1,7 +1,5 @@
-# -*- mode: python ; coding: utf-8 -*-
-
 a = Analysis(
-    ['main.py'],
+    ["main.py"],
     pathex=[],
     binaries=[],
     datas=[],
@@ -9,9 +7,9 @@ a = Analysis(
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
-    excludes=['tkinter', 'matplotlib', 'pytest'],
+    excludes=["tkinter", "matplotlib", "pytest"],
     noarchive=False,
-    optimize=2, # Level 2 optimization
+    optimize=2,
 )
 pyz = PYZ(a.pure)
 
@@ -21,11 +19,11 @@ exe = EXE(
     a.binaries,
     a.datas,
     [],
-    name='charlotte',
+    name="charlotte",
     debug=False,
     bootloader_ignore_signals=False,
     strip=True,
-    upx=True,
+    upx=False,
     upx_exclude=[],
     runtime_tmpdir=None,
     console=True,
@@ -34,5 +32,5 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
-    icon='icon/icon.ico'
+    icon="icon/icon.ico",
 )
