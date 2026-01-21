@@ -2,6 +2,8 @@ import re
 
 from pathlib import Path
 
+import typer
+
 
 class ASS:
     def __init__(
@@ -70,7 +72,10 @@ class ASS:
             i += 1
 
         if not self.dialog_lines:
-            print(f"Warning: {self.srt_file} is empty or has incorrect format")
+            if self.srt_file.stat().st_size == 0:
+                typer.echo(f"Info: {self.srt_file.name} is empty, skipping.")
+            else:
+                typer.echo(f"Warning: {self.srt_file} is empty or has incorrect format")
             return False
 
         return True

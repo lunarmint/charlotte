@@ -99,8 +99,6 @@ def demux(
                 if ass.parse_srt():
                     ass_path = ass.convert_to_ass(output_path=output_path)
                     file_paths.setdefault("ass", []).append(ass_path)
-                else:
-                    typer.echo("Failed to parse subtitle file.", err=True)
             except Exception as e:
                 typer.echo(f"Error: {e}", err=True)
 
