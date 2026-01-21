@@ -1,14 +1,22 @@
+<p align="center">
+  <img width="2100px" height="auto" src="https://raw.githubusercontent.com/lunarmint/charlotte/master/docs/imgs/banner.png"/><br/>
+  <i>Hi there! I'm Charlotte, a journalist with The Steambird~</i>
+  <i></i>
+</p>
+
+##### Artist: [黒光りとまと(御仕事募集中)](https://www.pixiv.net/en/artworks/117728570)
+
 # Charlotte
 
-A program for Genshin Impact that decrypts the `.usm` cutscene files into playable `.mkv` videos with official audio (EN, CN, JP, KR) and subtitles in 15 languages, with [VapourSynth](https://github.com/vapoursynth/vapoursynth) (a lossless video processing framework) suport to improve video artifacts such as banding, blocking, and chroma abberation that exists in the original cutscenes.
+A program for Genshin Impact that losslessly decrypts the `.usm` cutscene files into playable `.mkv` videos. Supports official audio (EN, CN, JP, KR) and subtitles in 15 languages, with [VapourSynth](https://github.com/vapoursynth/vapoursynth) (a lossless video processing framework) suport to improve video artifacts such as banding, blocking, and chroma aberration that exist in the original cutscenes.
 
-All cutscenes from version 1.0 to 6.3 can be decrypted.
+All cutscenes from versions 1.0 to 6.3 can be decrypted.
 
 Feel free to submit a pull request if you have missing keys.
 
 ## Why Charlotte?
 
-Where do you think those cutscenes came from? There must be someone who recorded them for us!
+Who do you think recorded all those cutscenes but Teyvat's best journalist?
 
 This tool was heavily inspired by [GI-cutscenes](https://github.com/ToaHartor/GI-cutscenes). All the decrypt algorithm is based off of this project. GI-cutscene has not been in active development for some time now, so I wanted to rewrite it at higher level and add features down the road such as VapourSynth processing and a GUI.
 
@@ -16,7 +24,7 @@ This tool was heavily inspired by [GI-cutscenes](https://github.com/ToaHartor/GI
 
 - [x] Decrypt `.usm` files into `.ivf` video and `.hca` audio.
 - [x] Subtitle support, formatting `.srt` into `.ass` format.
-- [x] Font and subtitle style matching the official version.
+- [x] Font and subtitle style match the official cutscenes.
 - [x] `.hca` audio to `.flac` for archival purposes.
 - [x] Mux video and audio into `.mkv`.
 - [ ] Add VapourSynth processing.
@@ -25,10 +33,11 @@ This tool was heavily inspired by [GI-cutscenes](https://github.com/ToaHartor/GI
 ## Running Charlotte
 
 ### Prerequisites
-- Download `charlotte.exe` from the [releases page](https://github.com/lunarmint/charlotte/releases/latest).
+- Download [charlotte.exe](https://github.com/lunarmint/charlotte/releases/latest) from the latest release.
 - Ensure that [ffmpeg.exe](https://ffmpeg.org/download.html#build-windows) and [mkvmerge.exe](https://mkvtoolnix.download/downloads.html#windows) are present in the same directory as `charlotte.exe`.
 - Clone [this repository](https://gitlab.com/Dimbreath/AnimeGameData) place the `Subtitle` directory in the same directory as `charlotte.exe`.
 - To get font files, go to `[Game Directory]\Genshin Impact game\GenshinImpact_Data\StreamingAssets\MiHoYoSDKRes\HttpServerResources` and copy the `font` directory into the same directory as `charlotte.exe`.
+- For `.usm` cutscene files, go to `[Game Directory]\Genshin Impact game\GenshinImpact_Data\StreamingAssets\VideoAssets\StandaloneWindows64`. Depending on when you started playing the game and how often you cleaned up past resources or reinstalling the game, not all cutscene files may be available, especially the ones from past limited events. I currently have a full archive of them and will try my best to organize them into a spreadsheet and find a host (~42.3 GB in total).
 
 ### Usage
 - Run `charlotte.exe` and select the `.usm` file or directory containing `.usm` files.
@@ -58,8 +67,9 @@ This will decrypt `Cs_EQHDJ005_HaiDengJie_Boy.usm` and output the result to `out
 
 ### Prerequisites
 
-- **Python 3.14 or higher**
-- **[uv](https://github.com/astral-sh/uv)** package manager.
+- Clone this repository.
+- Python 3.14 or higher
+- [uv](https://github.com/astral-sh/uv) package manager.
 
 ### How to Build
 
