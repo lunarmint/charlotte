@@ -77,9 +77,11 @@ This will decrypt `Cs_EQHDJ005_HaiDengJie_Boy.usm` and output the result to `out
 uv run pyinstaller charlotte.spec
 ```
 
-### How to Run
+## Support the Project
 
-For external dependencies and arguments, see [Running Charlotte](#running-charlotte).
+I put in a lot of time and effort to make this tool. If you enjoyed using it, your support would mean so much to me. It keeps me motivated to invest more time into the project and keep it alive for as long as I can ❤️
+
+<iframe src="https://github.com/sponsors/lunarmint/button" title="Sponsor lunarmint" height="32" width="114" style="border: 0; border-radius: 6px;"></iframe>
 ```sh
 python main.py [PATH_TO_USM_FILE_OR_DIR] [OPTIONS]
 ```
