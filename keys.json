@@ -1232,6 +1232,45 @@
 					]
 				}
 			]
+		},
+        {
+			"version": "7.0",
+			"videoGroups": [
+				{
+					"videoKey": 6542161829131848,
+					"parentQuestId": "7008",
+					"videos": [
+						"Cs_ZD_AQ70081401_YD_Boy",
+						"Cs_ZD_AQ70081401_YD_Girl"
+					]
+				},
+                {
+					"videoKey": 4832845766618216,
+					"parentQuestId": "7009",
+					"videos": [
+						"Cs_ZD_AQ70091101_ED_Boy",
+						"Cs_ZD_AQ70091101_ED_Girl",
+						"Cs_ZD_AQ70091701_DC_Boy",
+						"Cs_ZD_AQ70091701_DC_Girl",
+						"Cs_ZD_AQ70091801_HY"
+					]
+				},
+                {
+					"videoKey": 6030852960564501,
+					"parentQuestId": "7013",
+					"videos": [
+						"Cs_ZD_AQ70131201_TLBD_Boy",
+						"Cs_ZD_AQ70131201_TLBD_Girl"
+					]
+				},
+                {
+					"videoKey": 6950177611995413,
+					"version": "_reunion_",
+					"videos": [
+						"Video_Reunion_70"
+					]
+				}
+            ]
 		}
     ]
 }
