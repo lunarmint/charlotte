@@ -97,10 +97,16 @@ class USM:
             dec = int.from_bytes(data[pos : pos + 0x20]) ^ m
             data[pos : pos + 0x20] = dec.to_bytes(0x20)
 
-    def demux(self, output_path: Path, reporter: Reporter) -> dict[str, list[Path]]:
+    def demux(
+        self,
+        output_path: Path,
+        reporter: Reporter,
+        file_paths: dict[str, list[Path]] | None = None,
+    ) -> dict[str, list[Path]]:
         base_name = self.file_path.stem
         streams: dict[Path, BufferedWriter] = {}
-        file_paths: dict[str, list[Path]] = {}
+        if file_paths is None:
+            file_paths = {}
         known = {b"CRID", b"@SFV", b"@SFA", b"@CUE", b"@APP", b"@ALP", b"@SBT"}
         file_size = self.file_path.stat().st_size
 
@@ -117,6 +123,7 @@ class USM:
                     file_paths.setdefault(kind, []).append(path)
                 streams[path].write(payload)
 
+            chunks = 0
             while True:
                 header_data = fp.read(32)
                 if len(header_data) < 32:
@@ -124,8 +131,6 @@ class USM:
                     break
 
                 header = ChunkHeader.from_bytes(header_data)
-                task.advance(header.data_size + 8)
-
                 payload_size = header.data_size - header.data_offset - header.padding_size
                 if payload_size < 0:
                     raise CharlotteError(f"Corrupt USM chunk in {self.file_path.name}")
@@ -142,6 +147,12 @@ class USM:
                 elif header.signature == b"@SFA" and payload_type == 0:
                     write_to(f"{base_name}_{header.channel_no}.hca", "hca", data)
                 elif header.signature not in known:
+                    known.add(header.signature)  # warn once per signature
                     log.warning(f"Unknown signature {header.signature!r}")
+
+                task.advance(header.data_size + 8)
+                chunks += 1
+                if chunks % 100 == 0:
+                    reporter.checkpoint()
 
         return file_paths
