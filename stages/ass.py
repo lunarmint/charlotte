@@ -27,7 +27,8 @@ class ASS:
         self.dialog_lines: list[str] = []
 
     def parse_srt(self) -> bool:
-        content = self.srt_file.read_text(encoding="utf-8")
+        # utf-8-sig: some SRT files carry a BOM which breaks the digit check on the first block.
+        content = self.srt_file.read_text(encoding="utf-8-sig")
         blocks = re.split(r"\n{2,}", "\n".join(content.splitlines()).strip())
 
         for block in blocks:
@@ -47,9 +48,9 @@ class ASS:
             if end.startswith("0"):
                 end = end[1:]
 
-            text = lines[2]
-            if len(lines) >= 4 and lines[3].strip():
-                text = f"{text}\\n{lines[3]}"
+            # Renderers only honor soft breaks (\n) under WrapStyle 2 and draw them as spaces, so
+            # we use hard line break instead.
+            text = "\\N".join(line for line in lines[2:] if line.strip())
 
             self.dialog_lines.append(
                 f"Dialogue: 0,{start},{end},Default,,0,0,0,,{self.shadow}{text}"

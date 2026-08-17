@@ -42,11 +42,29 @@ def test_negative_timing_sign_stripped(tmp_path):
 
 
 def test_two_line_dialogue_joined(tmp_path):
-    """Test dialogues with multiple lines."""
+    """Multi-line dialogues join with \\N: renderers treat \\n as a space unless
+    WrapStyle is 2 (libass ass_get_next_char, VSFilter ParseString)."""
     srt = "1\n00:00:01,000 --> 00:00:02,000\nOne\nTwo\n"
     ass = ASS(str(write_srt(tmp_path, srt)))
     assert ass.parse_srt()
-    assert ass.dialog_lines[0].endswith(r"One\nTwo")
+    assert ass.dialog_lines[0].endswith(r"One\NTwo")
+
+
+def test_three_line_dialogue_keeps_every_line(tmp_path):
+    """Cs_Fontaine_LQ1403901_Edg has blocks with three text lines."""
+    srt = "1\n00:00:01,000 --> 00:00:02,000\nOne\nTwo\nThree\n"
+    ass = ASS(str(write_srt(tmp_path, srt)))
+    assert ass.parse_srt()
+    assert ass.dialog_lines[0].endswith(r"One\NTwo\NThree")
+
+
+def test_bom_first_block_parsed(tmp_path):
+    """A UTF-8 BOM (some Cs_MD_* files upstream) must not break the digit check
+    on the first block."""
+    ass = ASS(str(write_srt(tmp_path, chr(0xFEFF) + BASIC_SRT)))
+    assert ass.parse_srt()
+    assert len(ass.dialog_lines) == 1
+    assert ass.dialog_lines[0].endswith("Hello")
 
 
 def test_malformed_blocks_skipped(tmp_path):
