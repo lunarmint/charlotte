@@ -13,7 +13,7 @@ if TYPE_CHECKING:
 def mux(
     output_path: Path,
     vs_path: Path | None = None,
-    fonts: tuple[Path, Path] | None = None,
+    fonts: list[Path] | None = None,
     default_audio: str = "ja",
     default_subtitle: str = "EN",
     audio_extension: str = ".flac",
@@ -70,18 +70,15 @@ def mux(
         is_default = subtitle_lang == default_subtitle
         args.extend([f"-disposition:s:{i}", "default" if is_default else "0"])
 
-    if fonts:
-        font_ja, font_zh = fonts
+    for i, font in enumerate(fonts or []):
         args.extend(
             [
                 "-attach",
-                str(font_ja),
-                "-metadata:s:t:0",
+                str(font),
+                f"-metadata:s:t:{i}",
                 "mimetype=application/x-truetype-font",
-                "-attach",
-                str(font_zh),
-                "-metadata:s:t:1",
-                "mimetype=application/x-truetype-font",
+                f"-metadata:s:t:{i}",
+                f"filename={font.name}",
             ]
         )
 

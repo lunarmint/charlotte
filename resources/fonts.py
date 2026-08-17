@@ -7,38 +7,23 @@ from utils.logger import log
 from utils.paths import app_root
 
 
-def fetch_font() -> tuple[Path, Path] | None:
-    root = app_root()
-    font_ja = root / "font" / "ja-jp.ttf"
-    font_zh = root / "font" / "zh-cn.ttf"
-
-    if font_ja.exists() and font_zh.exists():
-        return font_ja, font_zh
-
-    log.info("Missing font. Attempting to get font from Genshin Impact installation...")
-
-    install_path = None
-    if sys.platform == "win32":
-        try:
-            import winreg
-
-            with winreg.OpenKey(
-                winreg.HKEY_LOCAL_MACHINE,
-                r"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\Genshin Impact",
-            ) as key:
-                install_path, _ = winreg.QueryValueEx(key, "InstallPath")
-        except (OSError, ImportError):
-            pass
-
-    if not install_path:
-        log.info(
-            "Subtitles will use the default system font. "
-            "To use official fonts, copy the font folder from: "
-            r"Genshin Impact\Genshin Impact game\GenshinImpact_Data\StreamingAssets\MiHoYoSDKRes\HttpServerResources"
-        )
+def game_font_dir() -> Path | None:
+    """Locate the font folder of a Genshin Impact installation via the registry."""
+    if sys.platform != "win32":
         return None
 
-    game_font_dir = (
+    try:
+        import winreg
+
+        with winreg.OpenKey(
+            winreg.HKEY_LOCAL_MACHINE,
+            r"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\Genshin Impact",
+        ) as key:
+            install_path, _ = winreg.QueryValueEx(key, "InstallPath")
+    except OSError, ImportError:
+        return None
+
+    font_dir = (
         Path(install_path)
         / "Genshin Impact game"
         / "GenshinImpact_Data"
@@ -47,21 +32,34 @@ def fetch_font() -> tuple[Path, Path] | None:
         / "HttpServerResources"
         / "font"
     )
+    return font_dir if font_dir.is_dir() else None
 
-    src_ja = game_font_dir / "ja-jp.ttf"
-    src_zh = game_font_dir / "zh-cn.ttf"
 
-    if not (game_font_dir.is_dir() and src_ja.exists() and src_zh.exists()):
-        log.warning("Failed to fetch fonts from game directory.")
-        return None
+def fetch_font() -> list[Path]:
+    root = app_root()
+    fonts = [root / "font" / name for name in ("ja-jp.ttf", "zh-cn.ttf")]
+    missing = [font for font in fonts if not font.exists()]
+    if not missing:
+        return fonts
 
-    try:
-        target = root / "font"
-        target.mkdir(exist_ok=True)
-        shutil.copy2(src_ja, font_ja)
-        shutil.copy2(src_zh, font_zh)
-        log.info("Fonts cached successfully.")
-        return font_ja, font_zh
-    except OSError as e:
-        log.warning(f"Failed to copy fonts: {e}")
-        return None
+    log.info("Missing font. Attempting to get font from Genshin Impact installation...")
+    source_dir = game_font_dir()
+    if source_dir is not None:
+        try:
+            (root / "font").mkdir(exist_ok=True)
+            for font in missing:
+                source = source_dir / font.name
+                if source.exists():
+                    shutil.copy2(source, font)
+                    log.info(f"Cached {font.name} from game installation.")
+        except OSError as e:
+            log.warning(f"Failed to copy fonts: {e}")
+
+    available = [font for font in fonts if font.exists()]
+    if len(available) < len(fonts):
+        log.info(
+            "Subtitles will use the default system font. "
+            "To use official fonts, copy the font folder from: "
+            r"Genshin Impact\Genshin Impact game\GenshinImpact_Data\StreamingAssets\MiHoYoSDKRes\HttpServerResources"
+        )
+    return available
