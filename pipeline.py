@@ -38,7 +38,7 @@ class Options:
     crf: float
     preset: str
     x265_params: str
-    fonts: tuple[Path, Path] | None = None
+    fonts: list[Path] | None = None
     default_audio: str = "ja"
     default_subtitle: str = "EN"
     audio_codec: str = "flac"
@@ -132,9 +132,9 @@ def process_usm(usm_file: Path, opts: Options, reporter: Reporter, keys: Keys) -
     usm = USM(usm_file, key1, key2)
     output_path = Path(opts.output) / f"{stem}"
     output_path.mkdir(exist_ok=True)
-    file_paths = usm.demux(output_path=output_path, reporter=reporter)
-
+    file_paths: dict[str, list[Path]] = {}
     try:
+        usm.demux(output_path=output_path, reporter=reporter, file_paths=file_paths)
         reporter.checkpoint()
 
         hca_files = file_paths.get("hca", [])
@@ -158,18 +158,21 @@ def process_usm(usm_file: Path, opts: Options, reporter: Reporter, keys: Keys) -
 
         filtered_mkv: Path | None = None
         if opts.vapoursynth:
-            filtered_mkv = vapoursynth_filter(
-                file_stem=stem,
-                output_path=output_path,
-                reporter=reporter,
-                crf=opts.crf,
-                preset=opts.preset,
-                x265_params=opts.x265_params,
-            )
-            if filtered_mkv:
-                file_paths.setdefault("vs", []).append(filtered_mkv)
+            if find_vs_script(stem) is None:
+                log.warning(f"No VapourSynth script found for {stem}, skipping filter...")
             else:
-                log.warning(f"Failed to apply VapourSynth filter for {stem}, skipping...")
+                filtered_mkv = vapoursynth_filter(
+                    file_stem=stem,
+                    output_path=output_path,
+                    reporter=reporter,
+                    crf=opts.crf,
+                    preset=opts.preset,
+                    x265_params=opts.x265_params,
+                )
+                if filtered_mkv:
+                    file_paths.setdefault("vs", []).append(filtered_mkv)
+                else:
+                    log.warning(f"Failed to apply VapourSynth filter for {stem}, skipping...")
 
         reporter.checkpoint()
 
@@ -204,8 +207,7 @@ def process_usm(usm_file: Path, opts: Options, reporter: Reporter, keys: Keys) -
 
 
 def probe_usm(usm_file: Path, keys_data: dict, reporter: Reporter) -> None:
-    """Report what is available for this file without processing anything: no
-    downloads, no prompts, no writes."""
+    """Report what is available for this file without processing anything."""
     stem = usm_file.stem
     sub_stem = BASENAME_FIXES.get(stem, stem)
     key = find_key_from_file(keys_data, stem) is not None
