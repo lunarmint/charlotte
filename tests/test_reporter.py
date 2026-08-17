@@ -65,6 +65,18 @@ def test_progress_throttled_to_whole_percents():
     assert progress[-1]["current"] == 1000
 
 
+def test_progress_at_total_not_re_emitted():
+    """Zero-advances after completion (the demux tail) don't emit duplicate events."""
+    reporter = make_reporter()
+    with reporter.task("demux", 4) as task:
+        task.advance(4)
+        task.advance(0)
+        task.advance(0)
+
+    progress = [event for event in events_of(reporter) if event["type"] == "progress"]
+    assert progress == [{"type": "progress", "stage": "demux", "current": 4, "total": 4}]
+
+
 # --- ask / cancel over stdin ---
 
 

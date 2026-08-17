@@ -85,10 +85,10 @@ class JsonReporter(Reporter):
             self.emit({"type": "stage", "stage": stage, "status": "end"})
 
     def update_task(self, stage, current, total):
-        # Throttle to whole-percent steps (plus the final tick): ~100 events per stage.
+        # Throttle to whole-percent steps with ~100 events per stage. Reaching the total
+        # always lands on a fresh percent (100), so the final tick is never dropped.
         percent = int(current * 100 / total) if total else 0
-        final_tick = total and current >= total
-        if percent != self.last_percent.get(stage, -1) or final_tick:
+        if percent != self.last_percent.get(stage, -1):
             self.last_percent[stage] = percent
             self.emit({"type": "progress", "stage": stage, "current": current, "total": total})
 
