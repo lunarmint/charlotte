@@ -8,7 +8,6 @@ from utils.paths import app_root
 
 
 def game_font_dir() -> Path | None:
-    """Locate the font folder of a Genshin Impact installation via the registry."""
     if sys.platform != "win32":
         return None
 
@@ -36,8 +35,8 @@ def game_font_dir() -> Path | None:
 
 
 def fetch_font() -> list[Path]:
-    root = app_root()
-    fonts = [root / "font" / name for name in ("ja-jp.ttf", "zh-cn.ttf")]
+    font_dir = app_root() / "font"
+    fonts = [font_dir / name for name in ("ja-jp.ttf", "zh-cn.ttf")]
     missing = [font for font in fonts if not font.exists()]
     if not missing:
         return fonts
@@ -46,7 +45,7 @@ def fetch_font() -> list[Path]:
     source_dir = game_font_dir()
     if source_dir is not None:
         try:
-            (root / "font").mkdir(exist_ok=True)
+            font_dir.mkdir(exist_ok=True)
             for font in missing:
                 source = source_dir / font.name
                 if source.exists():
