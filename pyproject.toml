@@ -7,21 +7,22 @@ requires-python = ">=3.14"
 readme = "README.md"
 maintainers = [{ name = "Mint" }]
 dependencies = [
+    "numpy>=2.5.2",
     "orjson>=3.12.0",
-    "pyinstaller>=6.22.1",
+    "pyinstaller>=6.22.2",
     "typer>=0.27.1",
     "urllib3>=2.7.0",
     "vapoursynth>=79",
     "vapoursynth-adaptivegrain>=0.5.0",
     "vapoursynth-akarin>=1.4.1",
-    "vapoursynth-bestsource>=20.0",
+    "vapoursynth-bestsource>=21.0",
     "vapoursynth-dctfilter>=3.2",
     "vapoursynth-deblock>=9.0",
     "vapoursynth-resize2>=0.5.0",
     "vapoursynth-vszip>=22.1.0",
     "vapoursynth-zsmooth>=0.20.0",
     "vs-placebo>=2.0.4",
-    "vsjetpack>=2.2.1",
+    "vsjetpack>=2.2.2",
     "vsnoise>=1.2.1",
     "vspreview>=0.20.1",
 ]
@@ -49,6 +50,7 @@ pythonpath = ["."]
 
 [tool.ruff]
 line-length = 100
+src = [".", "tests"]
 
 [tool.ruff.lint]
 select = [
