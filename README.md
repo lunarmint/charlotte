@@ -68,7 +68,7 @@ charlotte [PATHS...] [OPTIONS]
 Example:
 
 ```sh
-charlotte "USM\Cs_EQHDJ005_HaiDengJie_Girl.usm" -vs -nc
+charlotte "USM\Cs_Cutscene_Something_Girl.usm" -vs -nc
 ```
 
 This decrypts the cutscene, applies the VapourSynth filter script, and writes to `output/Cs_EQHDJ005_HaiDengJie_Girl/Cs_EQHDJ005_HaiDengJie_Girl.mkv` without deleting intermediate files.
@@ -76,13 +76,19 @@ This decrypts the cutscene, applies the VapourSynth filter script, and writes to
 Process several files and/or directories at once:
 
 ```sh
-charlotte "USM\Cs_A.usm" "USM\Cs_B.usm" "MoreCutscenes" -o output
+charlotte "USM\Cs_A.usm" "USM\Cs_B.usm" "USM\Cs_More_Cutscenes.usm" -o output
 ```
 
 To check what is available for your files (decryption key, local subtitles, VapourSynth script) without processing anything:
 
 ```sh
-charlotte "USM" --probe
+charlotte "USM\Cs_Cutscene_Something_Girl.usm" --probe
+```
+
+To recover key straight from the USM file and report them without demuxing or converting:
+
+```sh
+charlotte "USM\Cs_Cutscene_Something_Girl.usm" --crack
 ```
 
 For help:
@@ -111,6 +117,8 @@ charlotte --help
 | Option   | `--preset [PRESET]`      | `-preset` | x265 preset for VapourSynth output (default: `slower`).                                                                                        |
 | Option   | `--x265-params [PARAMS]` | `-x265`   | Custom x265 params (colon-separated). Overrides the built-in defaults below.                                                                   |
 | Option   | `--probe`                | `-p`      | Only report what is available for each file (decryption key, local subtitles, VapourSynth script). Read-only: nothing is processed or fetched. |
+| Option   | `--crack`                | `-c`      | Recover key from USM file and report it, without demuxing or converting.                                                                       |
+| Option   | `--json`                 | `-json`   | Emit newline-delimited JSON events on stdout for a GUI/automation frontend.                                                                    |
 
 When neither `--crf`, `--preset`, nor `--x265-params` is set, the following x265 params are applied automatically:
 
