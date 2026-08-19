@@ -2,7 +2,7 @@ import struct
 
 import pytest
 
-from conftest import FakeReporter
+from conftest import FakeReporter, chunk
 from stages.usm import USM
 from utils.errors import Cancelled, CharlotteError
 
@@ -12,14 +12,6 @@ class CancellingReporter(FakeReporter):
 
     def cancel_requested(self):
         return True
-
-
-def chunk(sig: bytes, payload: bytes, channel: int = 0, data_type: int = 0) -> bytes:
-    """One USM chunk: 32-byte header (payload at the standard 0x18 offset, no
-    padding) followed by the payload."""
-    data_size = 0x18 + len(payload)
-    header = struct.pack(">4sIxBHB2xB16x", sig, data_size, 0x18, 0, channel, data_type)
-    return header + payload
 
 
 def make_usm(tmp_path, chunks: bytes) -> USM:
@@ -65,8 +57,31 @@ def test_unknown_signature_warned_once(tmp_path, out_dir, reporter, caplog):
     assert len(warnings) == 1
 
 
+def test_known_metadata_signatures_skipped_silently(tmp_path, out_dir, reporter, caplog):
+    """CRID/@CUE/@APP and friends are recognized containers, not payloads: they are
+    dropped with neither an output stream nor the unknown-signature warning."""
+    data = (
+        chunk(b"CRID", b"header")
+        + chunk(b"@CUE", b"cue")
+        + chunk(b"@APP", b"app")
+        + chunk(b"@SFV", b"video")
+    )
+    file_paths = make_usm(tmp_path, data).demux(out_dir, reporter)
+
+    assert [record for record in caplog.records if "Unknown signature" in record.message] == []
+    assert set(file_paths) == {"ivf"}  # only the video became an output stream
+
+
 def test_corrupt_chunk_raises(tmp_path, out_dir, reporter):
     bad = struct.pack(">4sIxBHB2xB16x", b"@SFA", 4, 0x18, 0, 0, 0)  # data_size < data_offset
+    with pytest.raises(CharlotteError, match="Corrupt USM chunk"):
+        make_usm(tmp_path, bad).demux(out_dir, reporter)
+
+
+def test_undersized_data_offset_raises(tmp_path, out_dir, reporter):
+    """A data_offset below 0x18 would seek back into the header just read, so the walk
+    would creep through the file yielding overlapping garbage instead of stopping."""
+    bad = struct.pack(">4sIxBHB2xB16x", b"@SFA", 0, 0, 0, 0, 0)  # data_offset 0 < 0x18
     with pytest.raises(CharlotteError, match="Corrupt USM chunk"):
         make_usm(tmp_path, bad).demux(out_dir, reporter)
 

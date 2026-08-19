@@ -7,6 +7,7 @@ from typer.testing import CliRunner
 
 import main
 
+from conftest import forbid_call
 from utils.errors import Cancelled, CharlotteError
 
 
@@ -17,10 +18,6 @@ def make_usm(directory, name="Cs_Test.usm"):
     path = directory / name
     path.write_bytes(b"")
     return path
-
-
-def forbid_call(*args, **kwargs):
-    pytest.fail("Must not be called on this code path")
 
 
 @pytest.fixture
@@ -100,6 +97,13 @@ def test_key_requires_single_input(tmp_path):
     assert result.exit_code == 1
 
 
+def test_crack_rejects_probe_and_key(tmp_path):
+    """--crack reports keys instead of using them, so neither flag has a meaning here."""
+    usm = make_usm(tmp_path)
+    assert runner.invoke(main.app, [str(usm), "--crack", "--probe"]).exit_code == 1
+    assert runner.invoke(main.app, [str(usm), "--crack", "--key", "1"]).exit_code == 1
+
+
 def test_invalid_choice_flag_is_usage_error(tmp_path):
     usm = make_usm(tmp_path)
     assert runner.invoke(main.app, [str(usm), "-da", "xx"]).exit_code == 2
@@ -175,10 +179,14 @@ def test_probe_skips_sync_and_pipeline(monkeypatch, tmp_path):
     assert probed == [usm]
 
 
-def test_key_bootstrap_failure_exits_nonzero(pipeline_stub, monkeypatch, tmp_path):
-    def fail_keys(reporter, manual_key=None):
-        raise CharlotteError("Failed to fetch keys.json.")
+def test_crack_skips_keys_and_pipeline(monkeypatch, tmp_path):
+    """--crack needs neither keys.json nor subtitles: the file is the only input."""
+    cracked = []
+    monkeypatch.setattr(main, "crack_all", lambda files, reporter: cracked.extend(files))
+    monkeypatch.setattr(main, "Keys", forbid_call)
+    monkeypatch.setattr(main, "sync_subtitles", forbid_call)
+    monkeypatch.setattr(main, "process_usm", forbid_call)
 
-    monkeypatch.setattr(main, "Keys", fail_keys)
     usm = make_usm(tmp_path)
-    assert runner.invoke(main.app, [str(usm), "-o", str(tmp_path / "out")]).exit_code == 1
+    assert runner.invoke(main.app, [str(usm), "--crack"]).exit_code == 0
+    assert cracked == [usm]

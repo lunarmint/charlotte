@@ -3,12 +3,14 @@ from types import SimpleNamespace
 import pytest
 
 import pipeline
+import resources.keys
 
-from conftest import FakeReporter
-from pipeline import Options, probe_usm, process_usm
+from conftest import FakeReporter, chunk
+from pipeline import Options, crack_all, crack_usm, probe_usm, process_usm
+from resources.keys import Keys, calculate_key_from_filename
 from resources.subtitles import local_subtitle_path
-from test_usm import chunk
-from utils.errors import Cancelled
+from stages.crack import Recovery
+from utils.errors import Cancelled, CharlotteError
 
 
 KEYS_DATA = {"list": [{"videoKey": 111, "videos": ["Cs_A"]}]}
@@ -67,10 +69,9 @@ class CancelDuringDemux(FakeReporter):
         return self.checks > 2
 
 
-def make_cancel_run(tmp_path, no_cleanup: bool):
-    usm_file = tmp_path / "Cs_Test.usm"
-    usm_file.write_bytes(b"".join(chunk(b"@SFA", b"x") for _ in range(150)))
-    opts = Options(
+def make_options(tmp_path, no_cleanup: bool = False) -> Options:
+    (tmp_path / "out").mkdir(exist_ok=True)
+    return Options(
         output=str(tmp_path / "out"),
         no_cleanup=no_cleanup,
         vapoursynth=False,
@@ -78,9 +79,13 @@ def make_cancel_run(tmp_path, no_cleanup: bool):
         preset="fast",
         x265_params="",
     )
-    (tmp_path / "out").mkdir()
-    keys = SimpleNamespace(decryption_key=lambda name: (bytes(4), bytes(4)))
-    return usm_file, opts, keys
+
+
+def make_cancel_run(tmp_path, no_cleanup: bool):
+    usm_file = tmp_path / "Cs_Test.usm"
+    usm_file.write_bytes(b"".join(chunk(b"@SFA", b"x") for _ in range(150)))
+    keys = SimpleNamespace(decryption_key=lambda stem: (bytes(4), bytes(4)))
+    return usm_file, make_options(tmp_path, no_cleanup), keys
 
 
 def test_cancel_mid_demux_cleans_partial_files(tmp_path):
@@ -95,6 +100,98 @@ def test_cancel_mid_demux_keeps_files_with_no_cleanup(tmp_path):
     with pytest.raises(Cancelled):
         process_usm(usm_file, opts, CancelDuringDemux(), keys)
     assert (tmp_path / "out" / "Cs_Test" / "Cs_Test_0.hca").exists()
+
+
+def test_missing_key_falls_back_to_cracking(tmp_path, reporter, monkeypatch):
+    """A key that is neither on disk nor upstream is recovered from the video itself,
+    and the file is only skipped once that has also come up empty."""
+    cracked = []
+
+    def crack(usm_file, reporter):
+        cracked.append(usm_file)
+        return Recovery(None, "no IVF video stream in this file")
+
+    monkeypatch.setattr(pipeline, "crack_key", crack)
+    # A real Keys with no keys.json and no upstream, so every lookup genuinely misses.
+    monkeypatch.setattr(resources.keys, "fetch_upstream_keys", lambda: None)
+    usm_file = tmp_path / "Cs_Test.usm"
+    usm_file.write_bytes(chunk(b"@SFA", b"x"))
+
+    process_usm(usm_file, make_options(tmp_path), reporter, Keys(reporter))
+
+    assert cracked == [usm_file]
+    assert ("job_skipped", {"file": "Cs_Test.usm", "reason": "no_key"}) in reporter.events
+
+
+# --- key recovery ---
+
+
+def last_crack_event(reporter):
+    kind, data = reporter.events[-1]
+    assert kind == "crack"
+    return data
+
+
+def test_crack_reports_key_and_video_key(tmp_app_root, reporter, monkeypatch):
+    """videoKey is the keys.json half: what is left of the combined key once the
+    filename hash is subtracted back out."""
+    combined = (calculate_key_from_filename("Cs_A") + 777) & 0xFFFFFFFFFFFFFF
+    key_bytes = combined.to_bytes(8, "little")
+    monkeypatch.setattr(
+        pipeline, "crack_key", lambda f, r: Recovery((key_bytes[:4], key_bytes[4:]), "")
+    )
+
+    crack_usm(tmp_app_root / "Cs_A.usm", reporter)
+
+    assert last_crack_event(reporter) == {
+        "file": "Cs_A.usm",
+        "stem": "Cs_A",
+        "key": combined,
+        "video_key": 777,
+        "reason": "",
+    }
+
+
+def test_crack_failure_keeps_the_same_event_shape(tmp_app_root, reporter, monkeypatch):
+    """The GUI deserializes every crack event into one record, so the fields are fixed."""
+    monkeypatch.setattr(pipeline, "crack_key", lambda f, r: Recovery(None, "no IVF video stream"))
+
+    crack_usm(tmp_app_root / "Cs_A.usm", reporter)
+
+    assert last_crack_event(reporter) == {
+        "file": "Cs_A.usm",
+        "stem": "Cs_A",
+        "key": None,
+        "video_key": None,
+        "reason": "no IVF video stream",
+    }
+
+
+def test_crack_batch_continues_past_an_unreadable_file(tmp_app_root, reporter, monkeypatch):
+    def crack(usm_file, reporter):
+        if usm_file.name == "Cs_Bad.usm":
+            raise CharlotteError("Corrupt USM chunk in Cs_Bad.usm")
+        return Recovery((bytes(4), bytes(4)), "")
+
+    monkeypatch.setattr(pipeline, "crack_key", crack)
+
+    crack_all([tmp_app_root / "Cs_Bad.usm", tmp_app_root / "Cs_A.usm"], reporter)
+
+    assert [kind for kind, _ in reporter.events] == ["error", "crack", "crack_summary"]
+    assert reporter.events[-1][1] == {"recovered": 1, "unrecovered": 1}
+
+
+def test_crack_batch_stops_cleanly_on_cancel(tmp_app_root, reporter, monkeypatch):
+    """A cancel mid-batch is a cancelled event naming the file, not a traceback."""
+
+    def crack(usm_file, reporter):
+        raise Cancelled
+
+    monkeypatch.setattr(pipeline, "crack_key", crack)
+
+    crack_all([tmp_app_root / "Cs_A.usm", tmp_app_root / "Cs_B.usm"], reporter)
+
+    assert reporter.events == [("cancelled", {"file": "Cs_A.usm"})]
 
 
 def test_probe_remaps_subtitle_stem_only(tmp_app_root, reporter, monkeypatch):

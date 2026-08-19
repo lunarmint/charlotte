@@ -1,10 +1,9 @@
 import io
 import zipfile
 
-import pytest
-
 import resources.subtitles
 
+from conftest import forbid_call
 from resources.subtitles import local_subtitle_path, stored_commit, sync_subtitles, write_commit
 from utils.errors import CharlotteError
 
@@ -25,10 +24,6 @@ def make_archive(entries):
 def stub_upstream(monkeypatch, entries, commit="abc123"):
     monkeypatch.setattr(resources.subtitles, "latest_commit", lambda: commit)
     monkeypatch.setattr(resources.subtitles, "fetch_archive", lambda: make_archive(entries))
-
-
-def forbid_fetch():
-    pytest.fail("unexpected archive download")
 
 
 # --- helpers and the sync marker ---
@@ -87,11 +82,11 @@ def test_sync_skips_when_up_to_date(tmp_app_root, reporter, monkeypatch):
     (tmp_app_root / "Subtitle").mkdir()
     write_commit("abc123")
     monkeypatch.setattr(resources.subtitles, "latest_commit", lambda: "abc123")
-    monkeypatch.setattr(resources.subtitles, "fetch_archive", forbid_fetch)
+    monkeypatch.setattr(resources.subtitles, "fetch_archive", forbid_call)
 
     sync_subtitles(reporter)
 
-    # forbid_fetch fails the test if a download was attempted; the marker stays put.
+    # forbid_call fails the test if a download was attempted; the marker stays put.
     assert stored_commit() == "abc123"
 
 
@@ -124,7 +119,7 @@ def test_sync_network_failure_falls_back(reporter, monkeypatch):
         raise CharlotteError("net down")
 
     monkeypatch.setattr(resources.subtitles, "latest_commit", down)
-    monkeypatch.setattr(resources.subtitles, "fetch_archive", forbid_fetch)
+    monkeypatch.setattr(resources.subtitles, "fetch_archive", forbid_call)
     # The contract is falling back silently: no exception, no download attempt.
     sync_subtitles(reporter)
 

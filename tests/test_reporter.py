@@ -66,7 +66,7 @@ def test_progress_throttled_to_whole_percents():
 
 
 def test_progress_at_total_not_re_emitted():
-    """Zero-advances after completion (the demux tail) don't emit duplicate events."""
+    """Once a stage reports 100%, further zero-advances emit no duplicate events."""
     reporter = make_reporter()
     with reporter.task("demux", 4) as task:
         task.advance(4)
@@ -75,6 +75,28 @@ def test_progress_at_total_not_re_emitted():
 
     progress = [event for event in events_of(reporter) if event["type"] == "progress"]
     assert progress == [{"type": "progress", "stage": "demux", "current": 4, "total": 4}]
+
+
+def test_set_completed_lands_final_tick_without_duplicating():
+    """demux ends by snapping the bar to the file size (set_completed), covering any
+    trailing bytes too short to be a chunk. From short of the total that emits the
+    closing 100% tick; already at the total it must not emit a duplicate."""
+    short = make_reporter()
+    with short.task("demux", 100) as task:
+        task.advance(97)
+        task.set_completed(100)
+    progress = [event for event in events_of(short) if event["type"] == "progress"]
+    assert progress == [
+        {"type": "progress", "stage": "demux", "current": 97, "total": 100},
+        {"type": "progress", "stage": "demux", "current": 100, "total": 100},
+    ]
+
+    already = make_reporter()
+    with already.task("demux", 100) as task:
+        task.advance(100)
+        task.set_completed(100)
+    progress = [event for event in events_of(already) if event["type"] == "progress"]
+    assert progress == [{"type": "progress", "stage": "demux", "current": 100, "total": 100}]
 
 
 # --- ask / cancel over stdin ---

@@ -8,6 +8,7 @@ import pytest
 
 import utils.ffmpeg
 
+from conftest import flag_value
 from stages.mux import mux
 from utils.errors import CharlotteError
 
@@ -30,11 +31,6 @@ def make_output(tmp_path, stem="Cs_Test", channels=("0", "1", "2"), subs=("EN", 
 def input_files(cmd):
     """Every file passed to ffmpeg via -i, in order: video first, then audio, then subtitles."""
     return [value for flag, value in pairwise(cmd) if flag == "-i"]
-
-
-def flag_value(cmd, flag):
-    """The argument following a flag, e.g. flag_value(cmd, "-disposition:a:0") == "default"."""
-    return cmd[cmd.index(flag) + 1]
 
 
 @pytest.fixture

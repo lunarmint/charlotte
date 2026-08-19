@@ -2,6 +2,7 @@ import pytest
 
 import stages.filter
 
+from conftest import flag_value
 from stages.filter import DEFAULT_CRF, DEFAULT_PRESET, ffmpeg_params, find_vs_script
 
 
@@ -41,12 +42,6 @@ def test_find_vs_script_missing(vs_dir):
 
 
 # --- ffmpeg_params ---
-
-
-def flag_value(cmd, flag):
-    """The argument following a flag in the ffmpeg argument list,
-    e.g. flag_value(cmd, "-preset") == "slower"."""
-    return cmd[cmd.index(flag) + 1]
 
 
 def test_defaults_inject_builtin_x265_params(tmp_path):

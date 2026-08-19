@@ -1,14 +1,14 @@
 import orjson
-import pytest
 
 import resources.keys
 
+from conftest import forbid_call
 from resources.keys import (
     Keys,
+    calculate_key_from_filename,
     find_key_from_file,
     load_local_keys,
 )
-from utils.errors import CharlotteError
 
 
 FLAT_KEYS = {"list": [{"videoKey": 111, "videos": ["Cs_A", "Cs_B"]}]}
@@ -20,10 +20,6 @@ def write_keys(root, data):
     path = root / "keys.json"
     path.write_bytes(orjson.dumps(data))
     return path
-
-
-def forbid_fetch():
-    pytest.fail("Unexpected upstream fetch.")
 
 
 # --- find_key_from_file ---
@@ -62,22 +58,23 @@ def test_load_local_keys_missing_or_corrupt(tmp_app_root):
 
 def test_local_hit_skips_network(tmp_app_root, reporter, monkeypatch):
     write_keys(tmp_app_root, FLAT_KEYS)
-    monkeypatch.setattr(resources.keys, "fetch_upstream_keys", forbid_fetch)
+    monkeypatch.setattr(resources.keys, "fetch_upstream_keys", forbid_call)
     assert Keys(reporter).get("Cs_A") == 111
     assert reporter.prompts == []
 
 
 def test_manual_key_skips_disk_and_network(reporter, monkeypatch):
     # No keys.json exists in tmp_app_root; a manual key must not trigger the bootstrap fetch.
-    monkeypatch.setattr(resources.keys, "fetch_upstream_keys", forbid_fetch)
+    monkeypatch.setattr(resources.keys, "fetch_upstream_keys", forbid_call)
     assert Keys(reporter, manual_key=42).get("Cs_Anything") == 42
     assert reporter.prompts == []
 
 
-def test_missing_file_fetch_fails(reporter, monkeypatch):
+def test_missing_file_and_no_upstream_is_not_fatal(reporter, monkeypatch):
+    """A failed bootstrap leaves an empty key set instead of raising, so the caller can
+    still fall back to recovering each key from the video itself."""
     monkeypatch.setattr(resources.keys, "fetch_upstream_keys", lambda: None)
-    with pytest.raises(CharlotteError):
-        Keys(reporter)
+    assert Keys(reporter).get("Cs_A") is None
 
 
 def test_missing_file_fetched_and_saved(tmp_app_root, reporter, monkeypatch):
@@ -140,3 +137,26 @@ def test_corrupt_local_recovers_from_upstream(tmp_app_root, reporter, monkeypatc
     monkeypatch.setattr(resources.keys, "fetch_upstream_keys", lambda: orjson.dumps(FLAT_KEYS))
     reporter.answer = True
     assert Keys(reporter).get("Cs_A") == 111
+
+
+# --- decryption_key ---
+
+
+def test_decryption_key_splits_the_combined_key(tmp_app_root, reporter, monkeypatch):
+    """The two halves are the little-endian combined key: filename hash plus videoKey."""
+    write_keys(tmp_app_root, FLAT_KEYS)
+    monkeypatch.setattr(resources.keys, "fetch_upstream_keys", forbid_call)
+
+    key_pair = Keys(reporter).decryption_key("Cs_A")
+
+    assert key_pair is not None
+    key1, key2 = key_pair
+    combined = (calculate_key_from_filename("Cs_A") + 111) & 0xFFFFFFFFFFFFFF
+    assert key1 + key2 == combined.to_bytes(8, "little")
+
+
+def test_decryption_key_missing_returns_none(tmp_app_root, reporter, monkeypatch):
+    """Recovering the key from the video is the caller's job, not this method's."""
+    write_keys(tmp_app_root, FLAT_KEYS)
+    monkeypatch.setattr(resources.keys, "fetch_upstream_keys", lambda: None)
+    assert Keys(reporter).decryption_key("Cs_X") is None

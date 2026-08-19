@@ -1,4 +1,5 @@
 import contextlib
+import struct
 
 import pytest
 
@@ -7,6 +8,25 @@ import resources.keys
 import resources.subtitles
 
 from utils.reporter import Reporter, Task
+
+
+def chunk(sig: bytes, payload: bytes, channel: int = 0, data_type: int = 0) -> bytes:
+    """One USM chunk: 32-byte header (payload at the standard 0x18 offset, no
+    padding) followed by the payload."""
+    data_size = 0x18 + len(payload)
+    header = struct.pack(">4sIxBHB2xB16x", sig, data_size, 0x18, 0, channel, data_type)
+    return header + payload
+
+
+def flag_value(cmd, flag):
+    """The argument following a flag in an ffmpeg argument list,
+    e.g. flag_value(cmd, "-preset") == "slower"."""
+    return cmd[cmd.index(flag) + 1]
+
+
+def forbid_call(*args, **kwargs):
+    """Stub for anything a code path must not reach (network fetches, the pipeline)."""
+    pytest.fail("Must not be called on this code path")
 
 
 class FakeReporter(Reporter):
