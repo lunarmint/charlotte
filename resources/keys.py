@@ -1,12 +1,10 @@
 import functools
 
-from pathlib import Path
 from typing import TYPE_CHECKING
 
 import orjson
 import urllib3
 
-from utils.errors import CharlotteError
 from utils.logger import log
 from utils.paths import app_root
 
@@ -93,7 +91,8 @@ class Keys:
             log.info(f"keys.json not found at {self.path}.")
             upstream_bytes = fetch_upstream_keys()
             if not upstream_bytes:
-                raise CharlotteError("Failed to fetch keys.json.")
+                log.error("Failed to fetch keys.json. Keys will be retrieved from the file itself.")
+                return
             self.path.write_bytes(upstream_bytes)
 
         self.raw = self.path.read_bytes()
@@ -113,7 +112,7 @@ class Keys:
             return key
 
         if self.declined:
-            log.info(f"Skipping {stem}: key update declined.")
+            log.info(f"No keys.json entry for {stem}: the update was declined.")
             return None
 
         log.info(f"Key for {stem} not found. Checking upstream...")
@@ -123,10 +122,7 @@ class Keys:
             return None
 
         if not upstream_bytes or upstream_bytes == self.raw:
-            log.info(
-                "Upstream keys.json is identical to local file. Please check back later "
-                "when new keys are available!"
-            )
+            log.info("Upstream keys.json is identical to local file.")
             return None
 
         try:
@@ -145,7 +141,7 @@ class Keys:
         )
         if not overwrite_prompt:
             self.declined = True
-            log.info(f"Skipping {stem}: key update declined.")
+            log.info(f"No keys.json entry for {stem}: the update was declined.")
             return None
 
         try:
@@ -157,11 +153,9 @@ class Keys:
         self.raw = upstream_bytes
         return new_key
 
-    def decryption_key(self, filename: str) -> tuple[bytes, bytes] | None:
-        basename = Path(filename).stem
-        key1 = calculate_key_from_filename(basename)
-        key2 = self.get(basename)
-
+    def decryption_key(self, stem: str) -> tuple[bytes, bytes] | None:
+        key1 = calculate_key_from_filename(stem)
+        key2 = self.get(stem)
         if key2 is None:
             return None
 

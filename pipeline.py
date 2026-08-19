@@ -5,14 +5,15 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from resources.keys import find_key_from_file
+from resources.keys import calculate_key_from_filename, find_key_from_file
 from resources.subtitles import local_subtitle_path
 from stages.ass import ASS
+from stages.crack import crack_key
 from stages.filter import find_vs_script, vapoursynth_filter
 from stages.hca import HCA
 from stages.mux import mux
 from stages.usm import USM
-from utils.errors import Cancelled
+from utils.errors import Cancelled, CharlotteError
 from utils.ffmpeg import AUDIO_CODECS
 from utils.languages import SUBTITLES_LANGUAGES
 from utils.logger import log
@@ -20,6 +21,7 @@ from utils.logger import log
 
 if TYPE_CHECKING:
     from resources.keys import Keys
+    from stages.crack import Recovery
     from utils.reporter import Reporter
 
 
@@ -121,12 +123,15 @@ def process_usm(usm_file: Path, opts: Options, reporter: Reporter, keys: Keys) -
         reporter.event("job_skipped", file=usm_file.name, reason="exists")
         return
 
-    key_pair = keys.decryption_key(usm_file.name)
+    key_pair = keys.decryption_key(stem)
     if key_pair is None:
-        log.warning(f"Could not find decryption keys for {usm_file.name}, skipping...")
-        reporter.event("job_skipped", file=usm_file.name, reason="no_key")
-        return
-    reporter.checkpoint()  # also catches a cancel that arrived during ask()
+        # Attempt to find key from USM files directly.
+        key_pair = crack_usm(usm_file, reporter).key
+        if key_pair is None:
+            log.warning(f"Could not find decryption keys for {usm_file.name}, skipping...")
+            reporter.event("job_skipped", file=usm_file.name, reason="no_key")
+            return
+    reporter.checkpoint()
 
     key1, key2 = key_pair
     usm = USM(usm_file, key1, key2)
@@ -204,6 +209,58 @@ def process_usm(usm_file: Path, opts: Options, reporter: Reporter, keys: Keys) -
         output=str(final_mkv),
         status="ok",
     )
+
+
+def crack_usm(usm_file: Path, reporter: Reporter) -> Recovery:
+    stem = usm_file.stem
+    recovery = crack_key(usm_file, reporter)
+
+    key_pair = recovery.key
+    if key_pair is not None:
+        key1, key2 = key_pair
+        combined = int.from_bytes(key1 + key2, "little")
+        video_key = (combined - calculate_key_from_filename(stem)) & 0xFFFFFFFFFFFFFF
+        log.info(f"{usm_file.name}: key={combined:014X}, videoKey={video_key}")
+    else:
+        combined = video_key = None
+
+    reporter.event(
+        "crack",
+        file=usm_file.name,
+        stem=stem,
+        key=combined,
+        video_key=video_key,
+        reason=recovery.reason,
+    )
+    return recovery
+
+
+def crack_all(usm_files: list[Path], reporter: Reporter) -> None:
+    failures: dict[str, str] = {}  # filename -> why its key could not be recovered
+    for usm_file in usm_files:
+        try:
+            recovery = crack_usm(usm_file, reporter)
+        except Cancelled:
+            log.info(f"Cancelled during {usm_file.name}.")
+            reporter.event("cancelled", file=usm_file.name)
+            return
+        except CharlotteError as e:
+            log.error(f"Failed to read {usm_file.name}: {e}")
+            reporter.event("error", file=usm_file.name, message=str(e))
+            failures[usm_file.name] = str(e)
+            continue
+
+        if recovery.key is None:
+            failures[usm_file.name] = recovery.reason
+
+    recovered = len(usm_files) - len(failures)
+    log.info(f"Recovered {recovered} of {len(usm_files)} key(s).")
+    if failures:
+        log.warning(f"{len(failures)} file(s) need a key from another source:")
+        for name, reason in failures.items():
+            log.warning(f"  {name}: {reason}")
+
+    reporter.event("crack_summary", recovered=recovered, unrecovered=len(failures))
 
 
 def probe_usm(usm_file: Path, keys_data: dict, reporter: Reporter) -> None:

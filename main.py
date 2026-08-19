@@ -5,7 +5,7 @@ from typing import Annotated, NoReturn
 
 import typer
 
-from pipeline import Options, probe_usm, process_usm
+from pipeline import Options, crack_all, probe_usm, process_usm
 from resources.fonts import fetch_font
 from resources.keys import Keys, load_local_keys
 from resources.subtitles import sync_subtitles
@@ -139,6 +139,15 @@ def demux(
             "subtitles, VapourSynth script).",
         ),
     ] = False,
+    crack: Annotated[
+        bool,
+        typer.Option(
+            "--crack",
+            "-c",
+            help="Recover each file's decryption key from its own video stream and report it, "
+            "without demuxing or converting.",
+        ),
+    ] = False,
     key: Annotated[
         int | None,
         typer.Option("--key", "-k", help="Manually supply the decryption key for a single file."),
@@ -191,6 +200,13 @@ def demux(
     if key is not None and len(usm_files) > 1:
         log.error("--key is only valid with a single input file.")
         raise typer.Exit(1)
+    if crack and (probe or key is not None):
+        log.error("--crack cannot be combined with --probe or --key.")
+        raise typer.Exit(1)
+
+    if crack:
+        crack_all(usm_files, reporter)
+        return
 
     if probe:
         keys_data = load_local_keys()
@@ -199,12 +215,7 @@ def demux(
         return
 
     log.info(f"Found {len(usm_files)} USM file(s).")
-    try:
-        keys = Keys(reporter, manual_key=key)
-    except CharlotteError as e:
-        log.error(str(e))
-        reporter.event("error", file="", message=str(e))
-        raise typer.Exit(1) from None
+    keys = Keys(reporter, manual_key=key)
 
     Path(output).mkdir(parents=True, exist_ok=True)
     sync_subtitles(reporter)
