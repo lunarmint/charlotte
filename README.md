@@ -19,19 +19,18 @@
 
 # Charlotte
 
-Charlotte is a Genshin Impact utility that losslessly decrypts `.usm` cutscene files into playable `.mkv` videos, covering all known cutscenes from versions 1.0 through 7.0.
-
-If you have missing keys, pull requests are welcome. I try to fetch new keys myself, but some old keys may be missing.
-
-## Why Charlotte
-
 Who else would archive Teyvat's cutscenes but its best journalist?
 
-This project is heavily inspired by [GI-cutscenes](https://github.com/ToaHartor/GI-cutscenes). Charlotte rebuilds the workflow at a higher level and aims to add extras over time, including VapourSynth processing and a GUI.
+Charlotte is a Genshin Impact utility that losslessly decrypts `.usm` cutscene files into playable `.mkv` videos, covering all known cutscenes from versions 1.0 through 7.0. Charlotte is also able to retrieve keys directly from USM file itself, although an explicitly defined key is still preferred for processing speed.
+
+This project is heavily inspired by [GI-cutscenes](https://github.com/ToaHartor/GI-cutscenes). Charlotte rebuilds the workflow at a higher level and aims to add extras over time, including VapourSynth processing and a GUI. Also credits to [UsmDiviner](https://github.com/Senkin219/UsmDiviner) for inspiring me with the key guessing algorithm.
+
+If you have missing keys, pull requests are welcome.
 
 ## Features
 
 - Losslessly decrypt `.usm` into `.ivf` video and `.hca` EN, CN, JP, KR audio tracks
+- Guess keys for USM files if keys are missing
 - Convert `.hca` audio to lossless `.flac`, or `.opus` (VBR 256kbps) for smaller files
 - Convert `.srt` subtitles into styled `.ass` in 15 languages with matching official cutscene subtitle style and fonts
 - Mux all tracks into `.mkv`, with selectable default audio and subtitle tracks
@@ -39,7 +38,7 @@ This project is heavily inspired by [GI-cutscenes](https://github.com/ToaHartor/
 - Manual decryption key entry
 - Automatically fetches missing decryption keys, and fonts from the game directory
 - VapourSynth pipeline for post-processing quality improvements
-- Bundled lightweight custom FFmpeg — no system installation required
+- Bundled lightweight custom FFmpeg
 - Graphical User Interface (coming soon!)
 
 VapourSynth filter scripts take a lot of time to write to ensure quality, hence they will be slowly added over time. If you have encoding knowledge, contributions are welcome!
@@ -149,6 +148,8 @@ The bundled `ffmpeg.exe` is a lightweight custom build. To rebuild it:
 2. Copy `ffmpeg_options.txt` from the repo root to `<suite>/build/ffmpeg_options.txt`.
 3. To force a rebuild after changing options, delete `<suite>/local64/bin-video/ffmpeg.exe` before running `media-autobuild_suite.bat`.
 4. Copy the resulting `<suite>/local64/bin-video/ffmpeg.exe` to the repo root.
+
+If you don't want to do any of that, you can just get my prebuilt from [here](https://github.com/The-Steambird/charlotte/releases/tag/tools).
 
 ### Build Command
 
