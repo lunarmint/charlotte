@@ -216,13 +216,12 @@ def crack_usm(usm_file: Path, reporter: Reporter) -> Recovery:
     recovery = crack_key(usm_file, reporter)
 
     key_pair = recovery.key
+    combined = video_key = None
     if key_pair is not None:
         key1, key2 = key_pair
         combined = int.from_bytes(key1 + key2, "little")
         video_key = (combined - calculate_key_from_filename(stem)) & 0xFFFFFFFFFFFFFF
         log.info(f"{usm_file.name}: videoKey={video_key}")
-    else:
-        combined = video_key = None
 
     reporter.event(
         "crack",
