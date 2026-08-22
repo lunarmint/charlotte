@@ -23,23 +23,25 @@ Who else would archive Teyvat's cutscenes but its best journalist?
 
 Charlotte is a Genshin Impact utility that losslessly decrypts `.usm` cutscene files into playable `.mkv` videos, covering all known cutscenes from versions 1.0 through 7.0. Charlotte is also able to retrieve keys directly from USM file itself, although an explicitly defined key is still preferred for processing speed.
 
-This project is heavily inspired by [GI-cutscenes](https://github.com/ToaHartor/GI-cutscenes). Charlotte rebuilds the workflow at a higher level and aims to add extras over time, including VapourSynth processing and a GUI. Also credits to [UsmDiviner](https://github.com/Senkin219/UsmDiviner) for inspiring me with the key guessing algorithm.
+This project is heavily inspired by [GI-cutscenes](https://github.com/ToaHartor/GI-cutscenes). Charlotte not only rebuilds the workflow at a higher level, it also has various optimizations to the decryption algorithm to be significantly more efficient (and even faster than the original implementation despite being on Python). Charlotte also add extras with tons of QoLs (see below), VapourSynth processing, and a GUI. Also credits to [UsmDiviner](https://github.com/Senkin219/UsmDiviner) for inspiring me with the key guessing algorithm.
 
 If you have missing keys, pull requests are welcome.
 
 ## Features
 
 - Losslessly decrypt `.usm` into `.ivf` video and `.hca` EN, CN, JP, KR audio tracks
-- Guess keys for USM files if keys are missing
+- Significantly improved decryption algorithm compared to GI-cutscenes implementation
+- Key recovery for USM files without a key
 - Convert `.hca` audio to lossless `.flac`, or `.opus` (VBR 256kbps) for smaller files
 - Convert `.srt` subtitles into styled `.ass` in 15 languages with matching official cutscene subtitle style and fonts
 - Mux all tracks into `.mkv`, with selectable default audio and subtitle tracks
-- Automatically syncs the full subtitle collection (all 15 languages) from DimBreath, re-downloading only when it changes upstream
-- Manual decryption key entry
-- Automatically fetches missing decryption keys, and fonts from the game directory
+- Automatically syncs the full subtitle collection (all 15 languages) from DimBreath
+- Automatically fetches new keys from upstream
+- Automatically get fonts from the game directory if possible
 - VapourSynth pipeline for post-processing quality improvements
-- Bundled lightweight custom FFmpeg
-- Graphical User Interface (coming soon!)
+- Bundled lightweight custom FFmpeg build at only ~15MB
+- Built-in updater that checks for a newer release and installs it in place
+- Graphical User Interface (coming soon)
 
 VapourSynth filter scripts take a lot of time to write to ensure quality, hence they will be slowly added over time. If you have encoding knowledge, contributions are welcome!
 
@@ -91,6 +93,12 @@ To recover key straight from the USM file and report them without demuxing or co
 charlotte "USM\Cs_Cutscene_Something_Girl.usm" --crack
 ```
 
+To check for a newer release, and install it in place after confirmation:
+
+```sh
+charlotte --update
+```
+
 For help:
 
 ```sh
@@ -119,6 +127,8 @@ charlotte --help
 | Option   | `--probe`                | `-p`      | Only report what is available for each file (decryption key, local subtitles, VapourSynth script). Read-only: nothing is processed or fetched. |
 | Option   | `--crack`                | `-c`      | Recover key from USM file and report it, without demuxing or converting.                                                                       |
 | Option   | `--json`                 | `-json`   | Emit newline-delimited JSON events on stdout for a GUI/automation frontend.                                                                    |
+| Option   | `--update`               | `-u`      | Check GitHub for a newer release and update.                                                                                                   |
+| Option   | `--version`              | `-v`      | Print the Charlotte version and exit.                                                                                                          |
 
 When neither `--crf`, `--preset`, nor `--x265-params` is set, the following x265 params are applied automatically:
 
