@@ -179,6 +179,9 @@ class HCA:
         else:
             raise CharlotteError(f"comp/dec chunk not found: {self.file_path.name}")
 
+        if self.block_size == 0:
+            raise CharlotteError(f"HCA has no audio blocks: {self.file_path.name}")
+
         if self.match_chunk(offset, b"vbr\x00"):
             offset += 8
         if self.match_chunk(offset, b"ath\x00"):
@@ -209,13 +212,7 @@ class HCA:
             return
 
         table = build_cipher_table(self.ciph_type, self.key1, self.key2)
-        size = self.block_size
         self.data = self.data.translate(table)
-        view = memoryview(self.data)
-
-        for offset in range(0, len(self.data) - size + 1, size):
-            crc = crc16(view[offset : offset + size - 2])
-            struct.pack_into(">H", self.data, offset + size - 2, crc)
 
         self.ciph_type = 0
         struct.pack_into(">H", self.header, self.ciph_offset + 4, 0)
@@ -224,6 +221,12 @@ class HCA:
 
     def save(self) -> None:
         """Write the decrypted stream back to the source .hca for -nc runs."""
+        size = self.block_size
+        view = memoryview(self.data)
+        for offset in range(0, len(self.data) - size + 1, size):
+            crc = crc16(view[offset : offset + size - 2])
+            struct.pack_into(">H", self.data, offset + size - 2, crc)
+
         with open(self.file_path, "wb") as f:
             f.write(self.header)
             f.write(self.data)
