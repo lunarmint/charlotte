@@ -4,6 +4,8 @@ from contextlib import ExitStack
 from pathlib import Path
 from typing import TYPE_CHECKING, NamedTuple
 
+import numpy as np
+
 from utils.errors import CharlotteError
 from utils.logger import log
 
@@ -63,6 +65,11 @@ def read_chunks(file_path: Path) -> Generator[tuple[ChunkHeader, bytes]]:
 
             fp.seek(header.data_offset - MIN_DATA_OFFSET, 1)
             payload = fp.read(payload_size)
+            # A short read means the file ends mid-chunk. Left alone it would just end
+            # the walk, quietly writing a truncated .ivf as though nothing was wrong.
+            if len(payload) < payload_size:
+                raise CharlotteError(f"Truncated USM chunk in {file_path.name}")
+
             fp.seek(header.padding_size, 1)
             yield header, payload
 
@@ -116,27 +123,29 @@ class USM:
         if not is_masked(len(data)):
             return
 
-        mask2 = int.from_bytes(self.video_mask2)
-        end = len(data)
+        mask1 = np.frombuffer(self.video_mask1, dtype=np.uint8)
+        mask2 = np.frombuffer(self.video_mask2, dtype=np.uint8)
+        buf = np.frombuffer(data, dtype=np.uint8)
+        rows = (len(data) - CIPHER_START) // BLOCK
 
-        m = mask2
-        pos = CIPHER_START
-        while pos + BLOCK <= end:
-            dec = int.from_bytes(data[pos : pos + BLOCK]) ^ m
-            data[pos : pos + BLOCK] = dec.to_bytes(BLOCK)
-            m = dec ^ mask2
-            pos += BLOCK
-        if pos < end:
-            tail = end - pos
-            dec = int.from_bytes(data[pos:end]) ^ (m >> (8 * (BLOCK - tail)))
-            data[pos:end] = dec.to_bytes(tail)
+        # The chain collapses against the running XOR of the ciphertext blocks: every
+        # even block comes out as plaintext ^ video_mask2 and every odd one as plaintext
+        # outright. stages/crack.py attacks the mask through the same identity.
+        body = buf[CIPHER_START : CIPHER_START + rows * BLOCK].reshape(rows, BLOCK)
+        running = np.bitwise_xor.accumulate(body, axis=0)
+        running[0::2] ^= mask2
+        body[:] = running
 
-        # The head is masked last, folding in the block 0x100 bytes further along.
-        m = int.from_bytes(self.video_mask1)
-        for pos in range(MASK_START, CIPHER_START, BLOCK):
-            m ^= int.from_bytes(data[pos + 0x100 : pos + 0x100 + BLOCK])
-            dec = int.from_bytes(data[pos : pos + BLOCK]) ^ m
-            data[pos : pos + BLOCK] = dec.to_bytes(BLOCK)
+        # A trailing partial block carries on the chain, so it takes the mask the last
+        # full block left behind - that block's plaintext, reset with video_mask2.
+        tail = CIPHER_START + rows * BLOCK
+        if tail < len(data):
+            buf[tail:] ^= (running[-1] ^ mask2)[: len(data) - tail]
+
+        # The head is masked last, folding in the blocks 0x100 bytes further along.
+        head = buf[MASK_START:CIPHER_START].reshape(-1, BLOCK)
+        later = buf[CIPHER_START : CIPHER_START + CIPHER_START - MASK_START].reshape(-1, BLOCK)
+        head ^= mask1 ^ np.bitwise_xor.accumulate(later, axis=0)
 
     def demux(
         self,
