@@ -220,7 +220,7 @@ def demux(
     ] = False,
     version: Annotated[
         bool,
-        typer.Option("--version", help="Show the Charlotte version and exit."),
+        typer.Option("--version", "-v", help="Display Charlotte's current version and exit."),
     ] = False,
 ) -> None:
     clear_stale_binary()
