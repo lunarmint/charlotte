@@ -109,6 +109,15 @@ def test_missing_compression_chunk_raises(tmp_path):
         HCA(path, KEY1, KEY2)
 
 
+def test_zero_block_size_raises(tmp_path):
+    """The C# reference allows it, but block_size is the stride the checksum walk steps
+    by, so leaving it unchecked turns a header-only file into a bare ValueError - which
+    escapes the per-file handler and takes the whole batch with it."""
+    path = write_hca(tmp_path, hca_bytes(block_size=0, block_count=0))
+    with pytest.raises(CharlotteError, match="no audio blocks"):
+        HCA(path, KEY1, KEY2)
+
+
 def test_unknown_cipher_type_raises(tmp_path):
     """Only 0, 1 and 0x38 have a table. Anything else would silently build an all-zero
     one and translate the whole stream to zeros."""
