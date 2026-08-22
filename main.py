@@ -1,7 +1,9 @@
+import msvcrt
 import multiprocessing
+import time
 
 from pathlib import Path
-from typing import Annotated, NoReturn
+from typing import TYPE_CHECKING, Annotated, NoReturn
 
 import typer
 
@@ -15,6 +17,12 @@ from utils.ffmpeg import AUDIO_CODECS
 from utils.languages import AUDIO_LANGUAGES, SUBTITLES_LANGUAGES
 from utils.logger import log
 from utils.reporter import ConsoleReporter, JsonReporter, Reporter
+from utils.update import apply_update, clear_stale_binary, is_standalone_exe, report_update
+from utils.version import __version__
+
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 
 app = typer.Typer(help="USM video file demuxer and converter")
@@ -30,18 +38,32 @@ def choice_metavar(choices: list[str]) -> str:
     return f"[{'|'.join(choice.lower() for choice in choices)}]"
 
 
-def choice_normalizer(choices: list[str]):
-    """Case-insensitive typer callback mapping input."""
-    table = {choice.casefold(): choice for choice in choices}
+def choice_normalizer(choices: list[str]) -> Callable[[str], str]:
+    """Build the typer callback for a case-insensitive choice flag: it maps whatever the
+    user typed back to the canonical spelling in `choices`, or raises BadParameter."""
+    canonical_by_key = {choice.casefold(): choice for choice in choices}
+    allowed = ", ".join(choice.lower() for choice in choices)
 
     def normalize(value: str) -> str:
-        canonical = table.get(value.casefold())
+        canonical = canonical_by_key.get(value.casefold())
         if canonical is None:
-            allowed = ", ".join(choice.lower() for choice in choices)
-            raise typer.BadParameter(f"must be one of: {allowed}")
+            raise typer.BadParameter(f"Must be one of: {allowed}")
         return canonical
 
     return normalize
+
+
+def countdown_exit(seconds: int = 5) -> None:
+    """Pause after a self-update so the result is readable, exiting early on any keypress."""
+    for remaining in range(seconds, 0, -1):
+        typer.echo(f"\rExiting in {remaining}... (press any key) ", nl=False)
+        for _ in range(10):  # poll ~10x a second so a keypress is caught promptly
+            if msvcrt.kbhit():
+                msvcrt.getch()
+                typer.echo("")
+                return
+            time.sleep(0.1)
+    typer.echo("")
 
 
 def collect_files(input_paths: list[Path], reporter: Reporter) -> list[Path]:
@@ -148,6 +170,14 @@ def demux(
             "without demuxing or converting.",
         ),
     ] = False,
+    update: Annotated[
+        bool,
+        typer.Option(
+            "--update",
+            "-u",
+            help="Check GitHub for a newer release and update.",
+        ),
+    ] = False,
     key: Annotated[
         int | None,
         typer.Option("--key", "-k", help="Manually supply the decryption key for a single file."),
@@ -194,8 +224,33 @@ def demux(
             help="Write .mkv directly into the output directory without a parent folder.",
         ),
     ] = False,
+    version: Annotated[
+        bool,
+        typer.Option("--version", help="Show the Charlotte version and exit."),
+    ] = False,
 ) -> None:
+    clear_stale_binary()
+
+    if version:
+        typer.echo(f"Charlotte v{__version__}.")
+        raise typer.Exit(0)
+
     reporter = JsonReporter() if json_output else ConsoleReporter()
+
+    if update:
+        if usm_paths or probe or crack or key is not None:
+            log.error("--update cannot be combined with input files or other modes.")
+            raise typer.Exit(1)
+        info = report_update(reporter)
+        if not (info.available and info.latest and is_standalone_exe(json_output)):
+            return
+        wants_install = reporter.ask(f"Download and install {info.latest} now?", default=False)
+        if wants_install and apply_update(info, reporter):
+            log.info(f"Upgraded Charlotte from v{info.current} to {info.latest}!")
+            log.info("Restart Charlotte to use the new version.")
+            countdown_exit()
+        return
+
     usm_files = collect_files(usm_paths or [], reporter)
     if key is not None and len(usm_files) > 1:
         log.error("--key is only valid with a single input file.")

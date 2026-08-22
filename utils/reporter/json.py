@@ -3,9 +3,10 @@ import msvcrt
 import os
 import sys
 
-from contextlib import contextmanager
+from contextlib import contextmanager, suppress
 from ctypes import wintypes
 from itertools import count
+from typing import Any, TextIO
 
 import orjson
 
@@ -35,25 +36,32 @@ def parse_command(line: str | bytes) -> dict | None:
     return cmd if isinstance(cmd, dict) else None
 
 
+def force_utf8(stream: Any) -> TextIO:
+    """Force a text stream to UTF-8 to prevent UnicodeEncodeError."""
+    with suppress(AttributeError, OSError, ValueError):
+        stream.reconfigure(encoding="utf-8")
+    return stream
+
+
 class JsonReporter(Reporter):
     """NDJSON events on stdout; commands (answers/cancel) read from stdin on demand.
     Regular log go to stderr via the shared console in logger.py, keeping stdout JSON only."""
 
     def __init__(self, out=None, stdin=None):
-        self.out = out if out is not None else sys.stdout
+        self.out = force_utf8(out if out is not None else sys.stdout)
         self.stdin = stdin if stdin is not None else sys.stdin
         self.question_counter = count()
         self.cancelled = False
-        self.last_percent = {}  # per-stage, for throttling progress events
+        self.last_percent = {}
         # stdin is read one of two ways:
-        # 1. UI frontend: stdin is a real pipe, and everything reads it through the
-        # raw fd (self.pipe_fd) into self.stdin_buf, bypassing Python's buffered stdin.
-        # It makes cancellation reliable: cancel_requested() can peek the
-        # pipe without blocking, and because ask() reads from the same raw fd, no
-        # bytes can hide in Python's stdin buffer where that peek wouldn't see them.
-        # 2. Console / file / test: stdin is not a pipe (pipe_peek returns None), so
+        # 1. UI frontend: everything reads it through the raw fd (self.pipe_fd)
+        # into self.stdin_buf, bypassing Python's buffered stdin.
+        # Cancellation is reliable by allowing cancel_requested() to peek the
+        # pipe without blocking. ask() reads from the same raw fd so no
+        # bytes can hide in Python's stdin buffer where peek wouldn't see.
+        # 2. Console, file, and test: since stdin is not a pipe (pipe_peek returns None),
         # self.pipe_fd stays None, ask() falls back to stdin.readline(), and
-        # cancel_requested() never touches stdin.
+        # cancel_requested() can't touch stdin.
         self.stdin_buf = b""
         try:
             fd = self.stdin.fileno()
@@ -84,13 +92,13 @@ class JsonReporter(Reporter):
             self.last_percent.pop(stage, None)
             self.emit({"type": "stage", "stage": stage, "status": "end"})
 
-    def update_task(self, stage, current, total):
-        # Throttle to whole-percent steps with ~100 events per stage. Reaching the total
-        # always lands on a fresh percent (100), so the final tick is never dropped.
+    def update_task(self, handle, current, total):
+        # Limit the number of events emitted to 1 per whole percentage. The final tick
+        # lands on a fresh 100 (never equal to the prior 99), so the guard never drops it.
         percent = int(current * 100 / total) if total else 0
-        if percent != self.last_percent.get(stage, -1):
-            self.last_percent[stage] = percent
-            self.emit({"type": "progress", "stage": stage, "current": current, "total": total})
+        if percent != self.last_percent.get(handle, -1):
+            self.last_percent[handle] = percent
+            self.emit({"type": "progress", "stage": handle, "current": current, "total": total})
 
     def event(self, kind, **data):
         self.emit({"type": kind, **data})

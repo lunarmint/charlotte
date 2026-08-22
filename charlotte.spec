@@ -8,6 +8,7 @@ a = Analysis(
         ("ffmpeg.exe", "."),
     ],
     datas=[
+        ("pyproject.toml", "."),  # utils/version.py reads __version__ out of it at runtime
         ("vs", "vs"),
         *collect_data_files("vapoursynth"),
     ],

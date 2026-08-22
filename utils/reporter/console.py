@@ -23,6 +23,7 @@ STAGE_LABELS = {
     "demux": "Demuxing USM",
     "subtitles": "Subtitles",
     "ffmpeg": "Encoding",
+    "download": "Downloading update",
 }
 
 
@@ -37,18 +38,20 @@ class SpeedColumn(ProgressColumn):
         return Text(text, style="progress.data.speed")
 
 
-def progress_columns(unit):
-    columns: list[ProgressColumn] = [
+def make_progress(unit):
+    if unit == "B":
+        counters = [DownloadColumn(), TransferSpeedColumn()]
+    else:
+        counters = [MofNCompleteColumn(), SpeedColumn(unit)]
+    return Progress(
         TextColumn("[progress.description]{task.description}"),
         BarColumn(),
         TaskProgressColumn(),
-    ]
-    if unit == "B":
-        columns += [DownloadColumn(), TransferSpeedColumn()]
-    else:
-        columns += [MofNCompleteColumn(), SpeedColumn(unit)]
-    columns.append(TimeRemainingColumn())
-    return columns
+        *counters,
+        TimeRemainingColumn(),
+        console=console,
+        transient=True,
+    )
 
 
 class ConsoleReporter(Reporter):
@@ -57,8 +60,7 @@ class ConsoleReporter(Reporter):
 
     @contextmanager
     def task(self, stage: str, total, unit="it"):
-        progress = Progress(*progress_columns(unit), console=console, transient=True)
-        with progress:
+        with make_progress(unit) as progress:
             task_id = progress.add_task(STAGE_LABELS.get(stage, stage), total=total)
             yield Task(self, (progress, task_id), total)
 

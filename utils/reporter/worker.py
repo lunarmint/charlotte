@@ -24,8 +24,8 @@ class QueueReporter(Reporter):
         finally:
             self.queue.put(("task_end", stage))
 
-    def update_task(self, stage, current, total):
-        self.queue.put(("progress", stage, current))
+    def update_task(self, handle, current, total):
+        self.queue.put(("progress", handle, current))
 
     def ask(self, prompt, *, default=False):
         raise RuntimeError("the worker process cannot ask questions")
