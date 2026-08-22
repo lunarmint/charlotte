@@ -174,14 +174,21 @@ def test_identical_payloads_are_not_independent_evidence():
     assert left.contents == right.contents  # but on the same evidence twice
 
 
-def test_differing_payloads_are_independent_evidence():
-    left, right = Stats(), Stats()
-    rng = random.Random(1)
-    for i in range(20):
-        body = bytes(rng.randrange(256) for _ in range(BLOCK * 40))
-        (left if i % 2 == 0 else right).add(bytes(CIPHER_START) + body)
+def test_differing_payloads_clear_the_content_guard():
+    """The mirror of the case above, and the only branch where evaluate() accepts.
 
-    assert left.contents != right.contents
+    Pools that saw different bytes are genuinely independent, so the guard stands
+    aside and the two solves get to vouch for each other.
+    """
+    rng = random.Random(5)
+    left, right = Stats(), Stats()
+    for i in range(8):
+        (left if i % 2 == 0 else right).add(encrypt(video_plaintext(rng, 900), KEY1, KEY2))
+
+    mask, reason = evaluate(Sample(left, right, b"DKIF", (left.blocks + right.blocks) * BLOCK))
+
+    assert reason == ""
+    assert split_key(mask) == (KEY1, KEY2)
 
 
 def test_split_half_rejects_disagreeing_noise():

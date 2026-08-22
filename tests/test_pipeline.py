@@ -5,8 +5,15 @@ import pytest
 import pipeline
 import resources.keys
 
-from conftest import FakeReporter, chunk
-from pipeline import Options, crack_all, crack_usm, probe_usm, process_usm
+from conftest import FakeReporter, chunk, forbid_call
+from pipeline import (
+    Options,
+    crack_all,
+    crack_usm,
+    probe_usm,
+    process_subtitles,
+    process_usm,
+)
 from resources.keys import Keys, calculate_key_from_filename
 from resources.subtitles import local_subtitle_path
 from stages.crack import Recovery
@@ -69,7 +76,7 @@ class CancelDuringDemux(FakeReporter):
         return self.checks > 2
 
 
-def make_options(tmp_path, no_cleanup: bool = False) -> Options:
+def make_options(tmp_path, no_cleanup: bool = False, **overrides) -> Options:
     (tmp_path / "out").mkdir(exist_ok=True)
     return Options(
         output=str(tmp_path / "out"),
@@ -78,6 +85,7 @@ def make_options(tmp_path, no_cleanup: bool = False) -> Options:
         crf=0.0,
         preset="fast",
         x265_params="",
+        **overrides,
     )
 
 
@@ -121,6 +129,167 @@ def test_missing_key_falls_back_to_cracking(tmp_path, reporter, monkeypatch):
 
     assert cracked == [usm_file]
     assert ("job_skipped", {"file": "Cs_Test.usm", "reason": "no_key"}) in reporter.events
+
+
+# --- full run: output layout and cleanup ---
+
+
+@pytest.fixture
+def stub_stages(monkeypatch):
+    """Run process_usm for real from demux to cleanup, with the three stages that need
+    ffmpeg or VapourSynth replaced. mux writes the .mkv the output handling then moves."""
+    monkeypatch.setattr(pipeline, "process_audio", lambda *args, **kwargs: [])
+    monkeypatch.setattr(pipeline, "process_subtitles", lambda **kwargs: [])
+    monkeypatch.setattr(
+        pipeline,
+        "mux",
+        lambda output_path, **kwargs: (output_path / f"{output_path.name}.mkv").write_bytes(b"mkv"),
+    )
+
+
+def make_run(tmp_path, **overrides):
+    """A one-video one-audio USM plus the options and keys to process it."""
+    usm_file = tmp_path / "Cs_Test.usm"
+    usm_file.write_bytes(chunk(b"@SFV", b"video") + chunk(b"@SFA", b"audio", channel=0))
+    keys = SimpleNamespace(decryption_key=lambda stem: (bytes(4), bytes(4)))
+    return usm_file, make_options(tmp_path, **overrides), keys
+
+
+def test_run_writes_mkv_and_clears_intermediates(stub_stages, tmp_path, reporter):
+    usm_file, opts, keys = make_run(tmp_path)
+
+    process_usm(usm_file, opts, reporter, keys)
+
+    work_dir = tmp_path / "out" / "Cs_Test"
+    assert (work_dir / "Cs_Test.mkv").is_file()
+    assert list(work_dir.glob("*.ivf")) == []
+    assert list(work_dir.glob("*.hca")) == []
+    assert ("result", {
+        "file": "Cs_Test.usm",
+        "stem": "Cs_Test",
+        "output": str(work_dir / "Cs_Test.mkv"),
+        "status": "ok",
+    }) in reporter.events  # fmt: skip
+
+
+def test_no_cleanup_keeps_intermediates(stub_stages, tmp_path, reporter):
+    usm_file, opts, keys = make_run(tmp_path, no_cleanup=True)
+
+    process_usm(usm_file, opts, reporter, keys)
+
+    work_dir = tmp_path / "out" / "Cs_Test"
+    assert (work_dir / "Cs_Test.ivf").is_file()
+    assert (work_dir / "Cs_Test_0.hca").is_file()
+
+
+def test_flat_lifts_the_mkv_and_drops_the_work_dir(stub_stages, tmp_path, reporter):
+    """-f writes straight into the output directory, so the per-cutscene folder the
+    stages needed as scratch space has to go away with it."""
+    usm_file, opts, keys = make_run(tmp_path, flat=True)
+
+    process_usm(usm_file, opts, reporter, keys)
+
+    assert (tmp_path / "out" / "Cs_Test.mkv").is_file()
+    assert not (tmp_path / "out" / "Cs_Test").exists()
+
+
+def test_flat_with_no_cleanup_keeps_the_work_dir(stub_stages, tmp_path, reporter):
+    """-f -nc still lifts the .mkv out, but leaves the intermediates behind."""
+    usm_file, opts, keys = make_run(tmp_path, no_cleanup=True, flat=True)
+
+    process_usm(usm_file, opts, reporter, keys)
+
+    assert (tmp_path / "out" / "Cs_Test.mkv").is_file()
+    assert (tmp_path / "out" / "Cs_Test" / "Cs_Test.ivf").is_file()
+
+
+def test_skip_existing_stops_before_the_key_lookup(tmp_path, reporter):
+    """-se is a resume switch, so an existing .mkv has to short-circuit the run before
+    anything reads the file - a missing key must not turn a skip into a failure."""
+    usm_file, opts, _ = make_run(tmp_path, skip_existing=True)
+    existing = tmp_path / "out" / "Cs_Test" / "Cs_Test.mkv"
+    existing.parent.mkdir(parents=True)
+    existing.write_bytes(b"already here")
+
+    process_usm(usm_file, opts, reporter, SimpleNamespace(decryption_key=forbid_call))
+
+    assert ("job_skipped", {"file": "Cs_Test.usm", "reason": "exists"}) in reporter.events
+    assert existing.read_bytes() == b"already here"
+
+
+def test_skip_existing_checks_the_flat_path(stub_stages, tmp_path, reporter):
+    """With -f the .mkv lives one level up, so -se has to look for it there."""
+    usm_file, opts, _ = make_run(tmp_path, skip_existing=True, flat=True)
+    (tmp_path / "out" / "Cs_Test.mkv").write_bytes(b"already here")
+
+    process_usm(usm_file, opts, reporter, SimpleNamespace(decryption_key=forbid_call))
+
+    assert ("job_skipped", {"file": "Cs_Test.usm", "reason": "exists"}) in reporter.events
+
+
+# --- subtitles ---
+
+
+def test_subtitles_converted_to_ass(tmp_app_root, tmp_path):
+    write_subtitle("Cs_A", "DE")
+    output = tmp_path / "out"
+    output.mkdir()
+
+    ass_files = process_subtitles("Cs_A", output)
+
+    assert [path.name for path in ass_files] == ["Cs_A_DE.ass"]
+    assert (output / "subs" / "Cs_A_DE.ass").is_file()
+
+
+def test_empty_subtitle_named_not_converted(tmp_app_root, tmp_path, caplog):
+    """Upstream ships zero-byte .srt files for languages a cutscene was never localized
+    into. They are reported by name so the run doesn't look like it lost a track."""
+    write_subtitle("Cs_A", "DE")
+    empty = local_subtitle_path("Cs_A", "EN")
+    empty.parent.mkdir(parents=True, exist_ok=True)
+    empty.write_bytes(b"")
+    output = tmp_path / "out"
+    output.mkdir()
+
+    ass_files = process_subtitles("Cs_A", output)
+
+    assert [path.name for path in ass_files] == ["Cs_A_DE.ass"]
+    assert "Subtitles empty, skipping: English" in caplog.text
+
+
+def test_unparseable_subtitle_skipped_quietly(tmp_app_root, tmp_path, caplog):
+    """A non-empty file that yields no dialogue is dropped, but it is not "empty" - it
+    would be misleading to list it alongside the untranslated ones."""
+    garbage = local_subtitle_path("Cs_A", "EN")
+    garbage.parent.mkdir(parents=True, exist_ok=True)
+    garbage.write_text("nothing that parses", encoding="utf-8")
+    output = tmp_path / "out"
+    output.mkdir()
+
+    assert process_subtitles("Cs_A", output) == []
+    assert "Subtitles empty" not in caplog.text
+
+
+def test_one_bad_subtitle_does_not_sink_the_rest(tmp_app_root, tmp_path, monkeypatch, caplog):
+    """Subtitles are a nice-to-have: a conversion that throws is logged and the other
+    languages still make it into the mux."""
+    write_subtitle("Cs_A", "DE")
+    write_subtitle("Cs_A", "EN")
+    real_ass = pipeline.ASS
+
+    def flaky(sub_file, lang, *args, **kwargs):
+        if lang == "DE":
+            raise ValueError("boom")
+        return real_ass(sub_file, lang, *args, **kwargs)
+
+    monkeypatch.setattr(pipeline, "ASS", flaky)
+    output = tmp_path / "out"
+    output.mkdir()
+
+    ass_files = process_subtitles("Cs_A", output)
+
+    assert [path.name for path in ass_files] == ["Cs_A_EN.ass"]
+    assert "Error processing subtitle" in caplog.text
 
 
 # --- key recovery ---

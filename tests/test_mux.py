@@ -1,12 +1,7 @@
-import subprocess
-import types
-
 from itertools import pairwise
 from pathlib import Path
 
 import pytest
-
-import utils.ffmpeg
 
 from conftest import flag_value
 from stages.mux import mux
@@ -31,19 +26,6 @@ def make_output(tmp_path, stem="Cs_Test", channels=("0", "1", "2"), subs=("EN", 
 def input_files(cmd):
     """Every file passed to ffmpeg via -i, in order: video first, then audio, then subtitles."""
     return [value for flag, value in pairwise(cmd) if flag == "-i"]
-
-
-@pytest.fixture
-def ffmpeg(monkeypatch):
-    """Capture the ffmpeg command instead of running it and set return code to simulate failure."""
-    capture = types.SimpleNamespace(cmd=None, returncode=0)
-
-    def fake_run(cmd, **kwargs):
-        capture.cmd = cmd
-        return subprocess.CompletedProcess(cmd, capture.returncode, stdout="", stderr="")
-
-    monkeypatch.setattr(utils.ffmpeg.subprocess, "run", fake_run)
-    return capture
 
 
 def test_default_audio_sorted_first_and_flagged(ffmpeg, tmp_path):

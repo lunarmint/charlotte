@@ -9,6 +9,7 @@ import main
 
 from conftest import forbid_call
 from utils.errors import Cancelled, CharlotteError
+from utils.version import __version__
 
 
 runner = CliRunner()
@@ -40,8 +41,9 @@ def pipeline_stub(monkeypatch):
 # --- choice helpers ---
 
 
-def test_choice_metavar_lowercases():
-    assert main.choice_metavar(["JA", "en"]) == "[ja|en]"
+def test_choice_option_metavar_lowercases():
+    option = main.choice_option("--lang", help="", choices=["JA", "en"])
+    assert option.metavar == "[ja|en]"
 
 
 def test_choice_normalizer_case_insensitive():
@@ -54,6 +56,37 @@ def test_choice_normalizer_rejects_unknown():
     normalize = main.choice_normalizer(["ja", "en"])
     with pytest.raises(typer.BadParameter, match="Must be one of: ja, en"):
         normalize("xx")
+
+
+# --- modes that need no input files ---
+
+
+def test_version_prints_and_exits(monkeypatch):
+    monkeypatch.setattr(main, "collect_files", forbid_call)
+    result = runner.invoke(main.app, ["--version"])
+    assert result.exit_code == 0
+    assert __version__ in result.output
+
+
+def test_update_runs_without_input_files(monkeypatch):
+    called = []
+    monkeypatch.setattr(main, "run_update", lambda reporter, json_mode: called.append(json_mode))
+    monkeypatch.setattr(main, "collect_files", forbid_call)
+
+    assert runner.invoke(main.app, ["--update"]).exit_code == 0
+    assert called == [False]
+
+
+@pytest.mark.parametrize("extra", [["Cs_A.usm"], ["--probe"], ["--crack"], ["--key", "1"]])
+def test_update_rejects_every_other_mode(monkeypatch, extra):
+    """--update replaces the binary and exits; combining it with a run would leave the
+    engine mid-batch on a version that just got swapped out from under it."""
+    monkeypatch.setattr(main, "run_update", forbid_call)
+    assert runner.invoke(main.app, ["--update", *extra]).exit_code == 1
+
+
+def test_no_input_is_an_error():
+    assert runner.invoke(main.app, []).exit_code == 1
 
 
 # --- input collection ---

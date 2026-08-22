@@ -1,11 +1,14 @@
 import contextlib
 import struct
+import subprocess
+import types
 
 import pytest
 
 import resources.fonts
 import resources.keys
 import resources.subtitles
+import utils.ffmpeg
 
 from utils.reporter import Reporter, Task
 
@@ -29,24 +32,56 @@ def forbid_call(*args, **kwargs):
     pytest.fail("Must not be called on this code path")
 
 
+@pytest.fixture
+def ffmpeg(monkeypatch):
+    """Capture the ffmpeg command instead of running it. `cmd` and `input` record what
+    was passed; `returncode`, `stdout`, `stderr` and `missing` script the outcome."""
+    capture = types.SimpleNamespace(
+        cmd=None, input=None, returncode=0, stdout=b"", stderr=b"", missing=False
+    )
+
+    def fake_run(cmd, **kwargs):
+        if capture.missing:
+            raise FileNotFoundError(cmd[0])
+        capture.cmd = cmd
+        capture.input = kwargs.get("input")
+        return subprocess.CompletedProcess(
+            cmd, capture.returncode, stdout=capture.stdout, stderr=capture.stderr
+        )
+
+    monkeypatch.setattr(utils.ffmpeg.subprocess, "run", fake_run)
+    return capture
+
+
 class FakeReporter(Reporter):
-    """Test double: records logs/events/prompts, answers ask() with a scripted response."""
+    """Test double: records logs/events/prompts/progress, answers ask() with a scripted
+    response. `tasks` records every task() as (stage, total, unit), `progress` every
+    update_task() as (stage, current), and `open_tasks` counts the ones still unclosed -
+    all three matter for the worker-queue relay."""
 
     def __init__(self, answer: bool = False):
         self.answer = answer
         self.logs = []
         self.events = []
         self.prompts = []
+        self.tasks = []
+        self.progress = []
+        self.open_tasks = 0
 
     def log(self, level, msg):
         self.logs.append((level, msg))
 
     @contextlib.contextmanager
     def task(self, stage, total, unit="it"):
-        yield Task(self, stage, total)
+        self.tasks.append((stage, total, unit))
+        self.open_tasks += 1
+        try:
+            yield Task(self, stage, total)
+        finally:
+            self.open_tasks -= 1
 
     def update_task(self, handle, current, total):
-        pass
+        self.progress.append((handle, current))
 
     def ask(self, prompt, *, default=False):
         self.prompts.append(prompt)
@@ -54,6 +89,13 @@ class FakeReporter(Reporter):
 
     def event(self, kind, **data):
         self.events.append((kind, data))
+
+
+class CancellingReporter(FakeReporter):
+    """Reports a pending cancel so the next checkpoint raises."""
+
+    def cancel_requested(self):
+        return True
 
 
 @pytest.fixture
@@ -72,5 +114,6 @@ def tmp_app_root(tmp_path, monkeypatch):
 
 @pytest.fixture(autouse=True)
 def clear_upstream_cache():
-    """fetch_upstream_keys is from functools.cache and keep results from leaking across tests."""
+    """fetch_upstream_keys is functools.cache'd, so clear it between tests to keep one
+    test's stubbed result from leaking into the next."""
     resources.keys.fetch_upstream_keys.cache_clear()

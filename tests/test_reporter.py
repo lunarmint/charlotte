@@ -1,10 +1,16 @@
 import io
 
+from types import SimpleNamespace
+
 import orjson
 import pytest
+import typer
+
+from rich.progress import DownloadColumn, MofNCompleteColumn, TransferSpeedColumn
 
 from utils.errors import Cancelled
-from utils.reporter import PROTOCOL_VERSION, JsonReporter
+from utils.reporter import PROTOCOL_VERSION, ConsoleReporter, JsonReporter
+from utils.reporter.console import SpeedColumn, make_progress
 
 
 def make_reporter(stdin_text=""):
@@ -147,3 +153,56 @@ def test_cancel_during_ask_sticks():
     assert reporter.cancel_requested() is True
     with pytest.raises(Cancelled):
         reporter.checkpoint()
+
+
+# --- ConsoleReporter (the same contract, drawn instead of serialized) ---
+
+
+def columns_of(progress):
+    return {type(column) for column in progress.columns}
+
+
+def test_byte_stages_get_byte_columns():
+    """demux and download count bytes, so they read as sizes and transfer rates rather
+    than as a raw count of somethings."""
+    assert {DownloadColumn, TransferSpeedColumn} <= columns_of(make_progress("B"))
+
+
+def test_other_stages_get_counted_columns():
+    assert {MofNCompleteColumn, SpeedColumn} <= columns_of(make_progress("frame"))
+
+
+def test_speed_column_labels_its_unit():
+    column = SpeedColumn("frame")
+    assert "2.5 frame/s" in column.render(SimpleNamespace(finished_speed=None, speed=2.5)).plain
+    # finished_speed wins once a task ends, so the last rate shown isn't a decaying one.
+    assert "9.0 frame/s" in column.render(SimpleNamespace(finished_speed=9.0, speed=2.5)).plain
+
+
+def test_speed_column_before_the_first_sample():
+    column = SpeedColumn("frame")
+    assert "-- frame/s" in column.render(SimpleNamespace(finished_speed=None, speed=None)).plain
+
+
+def test_console_log_dispatches_by_level(caplog):
+    ConsoleReporter().log("warning", "watch out")
+    record = caplog.records[-1]
+    assert (record.message, record.levelname) == ("watch out", "WARNING")
+
+
+def test_console_task_tracks_progress():
+    """The progress bar is transient, so what is asserted is the task state behind it."""
+    reporter = ConsoleReporter()
+    with reporter.task("demux", 10, unit="B") as task:
+        task.advance(4)
+        task.set_completed(10)
+        progress, task_id = task.handle
+        assert progress.tasks[task_id].completed == 10
+    assert task.current == 10
+
+
+def test_console_ask_defers_to_typer(monkeypatch):
+    asked = []
+    monkeypatch.setattr(typer, "confirm", lambda prompt, default: asked.append((prompt, default)))
+    ConsoleReporter().ask("Overwrite?", default=True)
+    assert asked == [("Overwrite?", True)]

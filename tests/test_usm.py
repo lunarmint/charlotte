@@ -2,16 +2,9 @@ import struct
 
 import pytest
 
-from conftest import FakeReporter, chunk
+from conftest import CancellingReporter, chunk
 from stages.usm import USM
 from utils.errors import Cancelled, CharlotteError
-
-
-class CancellingReporter(FakeReporter):
-    """Reports a pending cancel so the next checkpoint raises."""
-
-    def cancel_requested(self):
-        return True
 
 
 def make_usm(tmp_path, chunks: bytes) -> USM:

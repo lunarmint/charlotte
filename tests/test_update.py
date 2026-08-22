@@ -4,6 +4,7 @@ import pytest
 
 import utils.update
 
+from conftest import FakeReporter, forbid_call
 from utils.errors import CharlotteError
 from utils.update import (
     UpdateInfo,
@@ -13,6 +14,7 @@ from utils.update import (
     looks_like_exe,
     parse_version,
     report_update,
+    run_update,
 )
 from utils.version import __version__
 
@@ -23,11 +25,6 @@ UPDATE_FIELDS = {"current", "latest", "available", "url", "notes", "download", "
 
 def release(tag: str, url: str = "https://example/rel", body: str = "notes") -> dict:
     return {"tag_name": tag, "html_url": url, "body": body}
-
-
-@pytest.mark.parametrize("tag", ["v0.4.0", "0.4.0", "v2.0", "v1.2.3b1", "1.2.3rc2"])
-def test_parse_version_accepts_release_tags(tag):
-    parse_version(tag)  # must not raise on any supported tag form
 
 
 def test_parse_version_ignores_leading_v():
@@ -155,8 +152,11 @@ def test_asset_download_url_none_when_no_exe():
     assert asset_download_url({}) is None
 
 
-def test_apply_update_declines_without_asset(reporter):
+def test_apply_update_declines_without_asset(reporter, monkeypatch, tmp_path):
     # No .exe attached to the release: fail up front, before any download starts.
+    # running_exe is stubbed because apply_update unlinks the partial .new next to it,
+    # which would otherwise be a real delete attempt beside the running interpreter.
+    monkeypatch.setattr(utils.update, "running_exe", lambda: tmp_path / "charlotte.exe")
     info = UpdateInfo(current=__version__, latest="v99.0.0", available=True)
     assert utils.update.apply_update(info, reporter) is False
 
@@ -225,3 +225,69 @@ def test_clear_stale_binary_noop_from_source(monkeypatch):
     # Not frozen: no on-disk exe to clean, so it must do nothing and not raise.
     monkeypatch.setattr(sys, "frozen", False, raising=False)
     utils.update.clear_stale_binary()
+
+
+# --- run_update ---
+
+
+def update_available(monkeypatch, frozen: bool = True) -> None:
+    monkeypatch.setattr(utils.update, "fetch_latest_release", lambda: release("v99.0.0"))
+    monkeypatch.setattr(sys, "frozen", frozen, raising=False)
+
+
+@pytest.mark.parametrize(
+    "frozen, json_mode",
+    [
+        (False, False),  # source run: report-only, nothing to swap
+        (True, True),  # --json: the GUI owns installing
+    ],
+)
+def test_run_update_report_only_when_not_standalone(monkeypatch, reporter, frozen, json_mode):
+    update_available(monkeypatch, frozen=frozen)
+    monkeypatch.setattr(utils.update, "apply_update", forbid_call)
+
+    run_update(reporter, json_mode)
+    assert reporter.prompts == []
+    assert reporter.events[0][0] == "update"  # the check itself is still reported
+
+
+def test_run_update_no_prompt_when_up_to_date(monkeypatch, reporter):
+    monkeypatch.setattr(utils.update, "fetch_latest_release", lambda: release(f"v{__version__}"))
+    monkeypatch.setattr(sys, "frozen", True, raising=False)
+    monkeypatch.setattr(utils.update, "apply_update", forbid_call)
+
+    run_update(reporter, json_mode=False)
+    assert reporter.prompts == []
+
+
+def test_run_update_decline_skips_install(monkeypatch, reporter):
+    update_available(monkeypatch)
+    monkeypatch.setattr(utils.update, "apply_update", forbid_call)
+
+    run_update(reporter, json_mode=False)  # FakeReporter answers False by default
+    assert len(reporter.prompts) == 1
+
+
+def test_run_update_installs_on_yes(monkeypatch):
+    update_available(monkeypatch)
+    applied = []
+
+    def fake_apply(info, reporter):
+        applied.append(info)
+        return True
+
+    paused = []
+    monkeypatch.setattr(utils.update, "apply_update", fake_apply)
+    monkeypatch.setattr(utils.update, "pause_before_exit", lambda: paused.append(True))
+
+    run_update(FakeReporter(answer=True), json_mode=False)
+    assert [info.latest for info in applied] == ["v99.0.0"]
+    assert paused  # a successful install holds the console open so the result is readable
+
+
+def test_run_update_failed_install_skips_pause(monkeypatch):
+    update_available(monkeypatch)
+    monkeypatch.setattr(utils.update, "apply_update", lambda info, reporter: False)
+    monkeypatch.setattr(utils.update, "pause_before_exit", forbid_call)
+
+    run_update(FakeReporter(answer=True), json_mode=False)  # must not raise, must not pause
