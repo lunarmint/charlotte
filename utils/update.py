@@ -236,15 +236,15 @@ def apply_update(info: UpdateInfo, reporter: Reporter) -> bool:
 
 def pause_before_exit(seconds: int = 5) -> None:
     for remaining in range(seconds, 0, -1):
-        sys.stdout.write(f"\rExiting in {remaining}... (press any key) ")
-        sys.stdout.flush()
+        sys.stderr.write(f"\rExiting in {remaining}... (press any key) ")
+        sys.stderr.flush()
         for _ in range(10):
             if msvcrt.kbhit():
                 msvcrt.getch()
-                sys.stdout.write("\n")
+                sys.stderr.write("\n")
                 return
             time.sleep(0.1)
-    sys.stdout.write("\n")
+    sys.stderr.write("\n")
 
 
 def run_update(reporter: Reporter, json_mode: bool) -> None:
