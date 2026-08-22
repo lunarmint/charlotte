@@ -1,4 +1,6 @@
+import msvcrt
 import sys
+import time
 
 from dataclasses import dataclass
 from pathlib import Path
@@ -230,3 +232,29 @@ def apply_update(info: UpdateInfo, reporter: Reporter) -> bool:
         log.error(str(e))
         new_file.unlink(missing_ok=True)
         return False
+
+
+def pause_before_exit(seconds: int = 5) -> None:
+    for remaining in range(seconds, 0, -1):
+        sys.stdout.write(f"\rExiting in {remaining}... (press any key) ")
+        sys.stdout.flush()
+        for _ in range(10):
+            if msvcrt.kbhit():
+                msvcrt.getch()
+                sys.stdout.write("\n")
+                return
+            time.sleep(0.1)
+    sys.stdout.write("\n")
+
+
+def run_update(reporter: Reporter, json_mode: bool) -> None:
+    """Offer to install the latest release and replace the binary."""
+    info = report_update(reporter)
+    if not (info.available and info.latest and is_standalone_exe(json_mode)):
+        return
+
+    wants_install = reporter.ask(f"Download and install {info.latest} now?", default=False)
+    if wants_install and apply_update(info, reporter):
+        log.info(f"Upgraded Charlotte from v{info.current} to {info.latest}!")
+        log.info("Restart Charlotte to use the new version.")
+        pause_before_exit()

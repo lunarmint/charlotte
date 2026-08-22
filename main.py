@@ -1,6 +1,4 @@
-import msvcrt
 import multiprocessing
-import time
 
 from pathlib import Path
 from typing import TYPE_CHECKING, Annotated, NoReturn
@@ -17,12 +15,14 @@ from utils.ffmpeg import AUDIO_CODECS
 from utils.languages import AUDIO_LANGUAGES, SUBTITLES_LANGUAGES
 from utils.logger import log
 from utils.reporter import ConsoleReporter, JsonReporter, Reporter
-from utils.update import apply_update, clear_stale_binary, is_standalone_exe, report_update
+from utils.update import clear_stale_binary, run_update
 from utils.version import __version__
 
 
 if TYPE_CHECKING:
     from collections.abc import Callable
+
+    from typer.models import OptionInfo
 
 
 app = typer.Typer(help="USM video file demuxer and converter")
@@ -31,11 +31,6 @@ app = typer.Typer(help="USM video file demuxer and converter")
 AUDIO_CODEC_CHOICES = list(AUDIO_CODECS)
 AUDIO_CHOICES = [tag for tag, _ in AUDIO_LANGUAGES.values()]
 SUBTITLE_CHOICES = list(SUBTITLES_LANGUAGES)
-
-
-def choice_metavar(choices: list[str]) -> str:
-    """Display flag parameter choices for --help in lowercase."""
-    return f"[{'|'.join(choice.lower() for choice in choices)}]"
 
 
 def choice_normalizer(choices: list[str]) -> Callable[[str], str]:
@@ -53,24 +48,29 @@ def choice_normalizer(choices: list[str]) -> Callable[[str], str]:
     return normalize
 
 
-def countdown_exit(seconds: int = 5) -> None:
-    """Pause after a self-update so the result is readable, exiting early on any keypress."""
-    for remaining in range(seconds, 0, -1):
-        typer.echo(f"\rExiting in {remaining}... (press any key) ", nl=False)
-        for _ in range(10):  # poll ~10x a second so a keypress is caught promptly
-            if msvcrt.kbhit():
-                msvcrt.getch()
-                typer.echo("")
-                return
-            time.sleep(0.1)
-    typer.echo("")
+def choice_option(*names: str, help: str, choices: list[str]) -> OptionInfo:
+    """A flag whose value must be one of `choices`, matched case-insensitively and listed
+    lowercase in --help."""
+    return typer.Option(
+        *names,
+        help=help,
+        metavar=f"[{'|'.join(choice.lower() for choice in choices)}]",
+        callback=choice_normalizer(choices),
+    )
+
+
+def die(message: str) -> NoReturn:
+    log.error(message)
+    raise typer.Exit(1)
 
 
 def collect_files(input_paths: list[Path], reporter: Reporter) -> list[Path]:
     def fail(message: str, name: str) -> NoReturn:
-        log.error(message)
         reporter.event("error", file=name, message=message)
-        raise typer.Exit(1)
+        die(message)
+
+    if not input_paths:
+        fail("No .usm input files provided.", "")
 
     files: list[Path] = []
     for path in input_paths:
@@ -86,10 +86,7 @@ def collect_files(input_paths: list[Path], reporter: Reporter) -> list[Path]:
         else:
             fail(f"Not a valid file or directory: {path}", str(path))
 
-    files = list(dict.fromkeys(files))
-    if not files:
-        fail("No .usm input files provided.", "")
-    return files
+    return list(dict.fromkeys(files))
 
 
 @app.command()
@@ -184,32 +181,29 @@ def demux(
     ] = None,
     default_audio: Annotated[
         str,
-        typer.Option(
+        choice_option(
             "--default-audio",
             "-da",
             help="Audio language to flag as default.",
-            metavar=choice_metavar(AUDIO_CHOICES),
-            callback=choice_normalizer(AUDIO_CHOICES),
+            choices=AUDIO_CHOICES,
         ),
     ] = "ja",
     default_subtitle: Annotated[
         str,
-        typer.Option(
+        choice_option(
             "--default-sub",
             "-ds",
             help="Subtitle language code to flag as default.",
-            metavar=choice_metavar(SUBTITLE_CHOICES),
-            callback=choice_normalizer(SUBTITLE_CHOICES),
+            choices=SUBTITLE_CHOICES,
         ),
     ] = "en",
     audio_codec: Annotated[
         str,
-        typer.Option(
+        choice_option(
             "--audio-codec",
             "-ac",
             help="Audio codec for muxed tracks.",
-            metavar=choice_metavar(AUDIO_CODEC_CHOICES),
-            callback=choice_normalizer(AUDIO_CODEC_CHOICES),
+            choices=AUDIO_CODEC_CHOICES,
         ),
     ] = "flac",
     skip_existing: Annotated[
@@ -239,25 +233,15 @@ def demux(
 
     if update:
         if usm_paths or probe or crack or key is not None:
-            log.error("--update cannot be combined with input files or other modes.")
-            raise typer.Exit(1)
-        info = report_update(reporter)
-        if not (info.available and info.latest and is_standalone_exe(json_output)):
-            return
-        wants_install = reporter.ask(f"Download and install {info.latest} now?", default=False)
-        if wants_install and apply_update(info, reporter):
-            log.info(f"Upgraded Charlotte from v{info.current} to {info.latest}!")
-            log.info("Restart Charlotte to use the new version.")
-            countdown_exit()
+            die("--update cannot be combined with input files or other modes.")
+        run_update(reporter, json_output)
         return
+    if crack and (probe or key is not None):
+        die("--crack cannot be combined with --probe or --key.")
 
     usm_files = collect_files(usm_paths or [], reporter)
     if key is not None and len(usm_files) > 1:
-        log.error("--key is only valid with a single input file.")
-        raise typer.Exit(1)
-    if crack and (probe or key is not None):
-        log.error("--crack cannot be combined with --probe or --key.")
-        raise typer.Exit(1)
+        die("--key is only valid with a single input file.")
 
     if crack:
         crack_all(usm_files, reporter)
