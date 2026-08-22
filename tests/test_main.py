@@ -52,7 +52,7 @@ def test_choice_normalizer_case_insensitive():
 
 def test_choice_normalizer_rejects_unknown():
     normalize = main.choice_normalizer(["ja", "en"])
-    with pytest.raises(typer.BadParameter, match="must be one of: ja, en"):
+    with pytest.raises(typer.BadParameter, match="Must be one of: ja, en"):
         normalize("xx")
 
 
