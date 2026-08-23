@@ -23,7 +23,7 @@ def ffmpeg_path() -> Path:
 
 
 def run_ffmpeg(args: list[str], error: str, input: bytes | None = None) -> None:
-    cmd = [str(ffmpeg_path()), "-y", "-v", "error", *args]
+    cmd = [str(ffmpeg_path()), "-y", "-v", "error", "-nostdin", *args]
     try:
         result = subprocess.run(cmd, input=input, capture_output=True, check=False)
     except FileNotFoundError:
