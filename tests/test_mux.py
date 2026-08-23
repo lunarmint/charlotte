@@ -90,6 +90,16 @@ def test_no_fonts_no_attachments(ffmpeg, tmp_path):
     assert "-attach" not in ffmpeg.cmd
 
 
+def test_nostdin_guards_the_inherited_stdin(ffmpeg, tmp_path):
+    """Mux is the one run_ffmpeg call with nothing on stdin, so ffmpeg inherits the parent's -
+    the GUI command pipe under --json - and would read a byte off it per keyboard poll."""
+    output = make_output(tmp_path)
+    mux(output)
+    assert "-nostdin" in ffmpeg.cmd
+    # Global options only count ahead of the first input.
+    assert ffmpeg.cmd.index("-nostdin") < ffmpeg.cmd.index("-i")
+
+
 def test_output_mkv_is_last_argument(ffmpeg, tmp_path):
     output = make_output(tmp_path)
     mux(output)
