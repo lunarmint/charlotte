@@ -8,13 +8,13 @@
 ---
 <p style="text-align: center;">
   <a href="https://github.com/The-Steambird/charlotte/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/The-Steambird/charlotte/ci.yml?branch=master&label=ci&logo=githubactions&logoColor=white" alt="CI" /></a>
-  <a href="https://github.com/lunarmint/charlotte/releases/latest"><img src="https://img.shields.io/github/v/release/lunarmint/charlotte?label=release" alt="Release" /></a>
-  <a href="https://github.com/lunarmint/charlotte/releases"><img src="https://img.shields.io/github/downloads/lunarmint/charlotte/total" alt="Downloads" /></a>
+  <a href="https://github.com/The-Steambird/charlotte/releases/latest"><img src="https://img.shields.io/github/v/release/The-Steambird/charlotte?label=release" alt="Release" /></a>
+  <a href="https://github.com/The-Steambird/charlotte/releases"><img src="https://img.shields.io/github/downloads/The-Steambird/charlotte/total" alt="Downloads" /></a>
   <a href="https://www.python.org/"><img src="https://img.shields.io/badge/python-3.14%2B-3776AB?logo=python&logoColor=white" alt="Python 3.14+" /></a>
   <a href="https://docs.astral.sh/ruff/"><img src="https://img.shields.io/badge/lint-ruff-D7FF64?logo=ruff&logoColor=111111" alt="Lint: Ruff" /></a>
   <a href="https://github.com/astral-sh/uv"><img src="https://img.shields.io/badge/package%20manager-uv-4B5DFF" alt="Package Manager: uv" /></a>
-  <a href="https://github.com/lunarmint/charlotte/blob/master/LICENSE"><img src="https://img.shields.io/github/license/lunarmint/charlotte" alt="License" /></a>
-  <a href="https://github.com/lunarmint/charlotte/stargazers"><img src="https://img.shields.io/github/stars/lunarmint/charlotte?style=social" alt="GitHub stars" /></a>
+  <a href="https://github.com/The-Steambird/charlotte/blob/master/LICENSE"><img src="https://img.shields.io/github/license/The-Steambird/charlotte" alt="License" /></a>
+  <a href="https://github.com/The-Steambird/charlotte/stargazers"><img src="https://img.shields.io/github/stars/The-Steambird/charlotte?style=social" alt="GitHub stars" /></a>
 </p>
 
 # Charlotte
@@ -26,6 +26,8 @@ Charlotte is a Genshin Impact utility that losslessly decrypts `.usm` cutscene f
 This project is heavily inspired by [GI-cutscenes](https://github.com/ToaHartor/GI-cutscenes). Charlotte not only rebuilds the workflow at a higher level, it also has various optimizations to the decryption algorithm to be significantly more efficient (and even faster than the original implementation despite being on Python). Charlotte also add extras with tons of QoLs (see below), VapourSynth processing, and a GUI. Also credits to [UsmDiviner](https://github.com/Senkin219/UsmDiviner) for inspiring me with the key guessing algorithm.
 
 If you have missing keys, pull requests are welcome.
+
+Disclaimer: This tool is purely for educational purpose and aims to archive already released game content.
 
 ## Features
 
