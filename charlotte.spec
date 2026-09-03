@@ -10,7 +10,18 @@ a = Analysis(
     datas=[
         ("pyproject.toml", "."),  # utils/version.py reads __version__ out of it at runtime
         ("vs", "vs"),
-        *collect_data_files("vapoursynth"),
+        # .pdb debug symbols and the C headers/vspipe are unused in binary.
+        *collect_data_files(
+            "vapoursynth",
+            excludes=[
+                "**/*.pdb",
+                "**/*.pyi",
+                "include",
+                "pkgconfig",
+                "vspipe.exe",
+                "vsvfw.dll",
+            ],
+        ),
     ],
     hiddenimports=[
         "vsdeband",
@@ -22,7 +33,7 @@ a = Analysis(
     hookspath=[],
     hooksconfig={},
     runtime_hooks=["runtime_hook.py"],
-    excludes=["vspreview"],
+    excludes=["vspreview", "PIL"],
     noarchive=False,
     optimize=2,
 )
