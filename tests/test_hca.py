@@ -12,7 +12,7 @@ import struct
 import pytest
 
 from conftest import flag_value
-from stages.hca import HCA
+from stages.hca import HCA, crc16
 from utils.errors import CharlotteError
 from utils.ffmpeg import FFMPEG_MISSING
 
@@ -67,6 +67,16 @@ def make_hca(tmp_path, name: str = "Cs_Test_0.hca") -> HCA:
     return HCA(write_hca(tmp_path, hca_bytes(), name), KEY1, KEY2)
 
 
+# --- checksum ---
+
+
+def test_crc16_check_value():
+    """The table is generated from its polynomial rather than kept as 256 literals; the
+    standard check value for CRC-16 poly 0x8005 (unreflected, zero init) pins it to the
+    table the C# shipped."""
+    assert crc16(b"123456789") == 0xFEE8
+
+
 # --- header walk ---
 
 
@@ -80,6 +90,16 @@ def test_header_fields_parsed(tmp_path):
     assert hca.block_size == 0x40
     assert hca.ciph_type == 0x38
     assert len(hca.data) == 0x40 * 3  # bounded by the declared blocks, not end of file
+
+
+def test_short_file_warns_about_missing_blocks(tmp_path, caplog):
+    """Audio that ends before its declared blocks still decodes, so it is a warning
+    rather than a rejection - but a silent one would hide a cutscene losing its tail."""
+    path = write_hca(tmp_path, hca_bytes(block_size=0x20, block_count=4)[:-0x30])
+    hca = HCA(path, KEY1, KEY2)
+
+    assert len(hca.data) == 0x20 * 4 - 0x30
+    assert "declares 4 audio blocks but holds only 2" in caplog.text
 
 
 # --- header rejections ---

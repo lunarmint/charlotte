@@ -5,10 +5,12 @@ import pytest
 
 from conftest import chunk
 from stages.crack import (
+    SAMPLE_STEPS,
     STAGES,
     Recovery,
     Sample,
     Stats,
+    collect,
     crack_key,
     evaluate,
     expand_0,
@@ -146,40 +148,37 @@ def test_crack_key_declines_too_little_video(tmp_path, reporter):
     assert "bytes of encrypted video" in recovery.reason
 
 
-def test_crack_key_declines_a_repeated_payload(tmp_path, reporter):
-    """Enough video to clear the sample floor, but it is one frame over and over, so
-    the halves are a single piece of evidence counted twice."""
-    payload = b"DKIF" + bytes(CIPHER_START + 1600 * BLOCK - 4)
+def test_repeated_payloads_are_dealt_once(tmp_path, reporter):
+    """A frame seen again adds nothing the solver can use, so it is dropped: it must
+    not help a thin file over the sample floor, and it must not reach the second pool,
+    where it would be the first pool's evidence counted twice."""
+    payload = b"DKIF" + bytes(CIPHER_START + 100 * BLOCK - 4)
     usm_file = tmp_path / "Cs_Test.usm"
-    usm_file.write_bytes(b"".join(chunk(b"@SFV", payload) for _ in range(2)))
+    usm_file.write_bytes(b"".join(chunk(b"@SFV", payload) for _ in range(5)))
+
+    sample = collect(usm_file, reporter, SAMPLE_STEPS[0])
+
+    assert sample.used == 100 * BLOCK
+    assert (sample.left.blocks, sample.right.blocks) == (100, 0)
+
+
+def test_crack_key_declines_a_repeated_payload(tmp_path, reporter):
+    """One frame over and over, large enough that counting the repeats would clear
+    the sample floor. Split-half only proves anything if the two pools saw different
+    bytes, and a placeholder like this has only the one to offer."""
+    payload = b"DKIF" + bytes(CIPHER_START + 3200 * BLOCK - 4)
+    usm_file = tmp_path / "Cs_Test.usm"
+    usm_file.write_bytes(b"".join(chunk(b"@SFV", payload) for _ in range(4)))
 
     recovery = crack_key(usm_file, reporter)
 
     assert recovery.key is None
-    assert "repeats the same payload" in recovery.reason
+    assert "only one distinct video payload" in recovery.reason
 
 
-def test_identical_payloads_are_not_independent_evidence():
-    """Split-half only proves anything if the two pools saw different bytes.
-
-    A placeholder asset - zero-filled, or one frame repeated - makes both pools
-    identical, so they agree on an arbitrary mask. Stats.contents is what catches it.
-    """
-    payload = bytes(CIPHER_START + BLOCK * 400)
-    left, right = Stats(), Stats()
-    for i in range(20):
-        (left if i % 2 == 0 else right).add(payload)
-
-    assert solve(*left.tables()) == solve(*right.tables())  # they do agree
-    assert left.contents == right.contents  # but on the same evidence twice
-
-
-def test_differing_payloads_clear_the_content_guard():
-    """The mirror of the case above, and the only branch where evaluate() accepts.
-
-    Pools that saw different bytes are genuinely independent, so the guard stands
-    aside and the two solves get to vouch for each other.
-    """
+def test_agreeing_halves_vouch_for_the_key():
+    """The only branch where evaluate() accepts: two pools that saw different bytes
+    and still solved to the same mask."""
     rng = random.Random(5)
     left, right = Stats(), Stats()
     for i in range(8):
@@ -195,16 +194,14 @@ def test_split_half_rejects_disagreeing_noise():
     """The core safety property: two halves that don't agree yield no key at all.
 
     Pure noise carries no 00,00/FF,FF signal, so each half chases its own tail and
-    solves a different mask. The pools hold different bytes, so this clears the
-    content guard and lands squarely on the split-half disagreement it is meant to
-    catch - the branch that keeps a thin sample from ever accepting a wrong key."""
+    solves a different mask - the branch that keeps a thin sample from ever
+    accepting a wrong key."""
     rng = random.Random(11)
     left, right = Stats(), Stats()
     for i in range(30):
         body = bytes(rng.randrange(256) for _ in range(BLOCK * 60))
         (left if i % 2 == 0 else right).add(bytes(CIPHER_START) + body)
 
-    assert left.contents != right.contents  # not the identical-pools shortcut
     used = (left.blocks + right.blocks) * BLOCK
     mask, reason = evaluate(Sample(left, right, b"DKIF", used))
 

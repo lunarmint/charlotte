@@ -132,6 +132,15 @@ def test_truncated_chunk_raises(tmp_path, out_dir, reporter):
         make_usm(tmp_path, data).demux(out_dir, reporter)
 
 
+def test_oversized_data_size_raises_before_reading(tmp_path, out_dir, reporter):
+    """A header claiming more payload than the file holds is rejected before the read.
+    read() allocates the declared size up front, so checking afterwards would first try
+    to allocate 4 GB for a corrupt 0xFFFFFFFF - and MemoryError is not a CharlotteError."""
+    bad = struct.pack(">4sIxBHB2xB16x", b"@SFA", 0xFFFFFFFF, 0x18, 0, 0, 0)
+    with pytest.raises(CharlotteError, match="Truncated USM chunk"):
+        make_usm(tmp_path, bad).demux(out_dir, reporter)
+
+
 def test_undersized_data_offset_raises(tmp_path, out_dir, reporter):
     """A data_offset below 0x18 would seek back into the header just read, so the walk
     would creep through the file yielding overlapping garbage instead of stopping."""
