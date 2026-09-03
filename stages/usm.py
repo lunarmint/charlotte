@@ -17,12 +17,20 @@ if TYPE_CHECKING:
     from utils.reporter import Reporter
 
 
-BLOCK = 0x20  # the mask is applied one block at a time
-MASK_START = 0x40  # first byte of a video payload a mask ever touches
-CIPHER_START = 0x140  # start of the chained-mask region within a video payload
-MIN_MASKED = 0x200  # payloads with less than this past MASK_START are left in the clear
+# Every chunk is a 32-byte header, then its payload data_offset bytes past byte 8.
 HEADER_SIZE = 32
-MIN_DATA_OFFSET = 0x18  # data_offset counts from byte 8 of the header, so this is its floor
+MIN_DATA_OFFSET = 0x18  # the header itself already covers this much past byte 8
+
+# A video payload is masked in two regions, unless fewer than MIN_MASKED bytes follow
+# the clear part - then it is left alone entirely.
+#
+#   0x00       0x40        0x140                       end
+#    |  clear   |   head    |   chained body ...         |
+BLOCK = 0x20  # the mask is 32 bytes and applies one block at a time
+MASK_START = 0x40
+CIPHER_START = 0x140
+HEAD_SIZE = CIPHER_START - MASK_START
+MIN_MASKED = 0x200
 
 
 def is_masked(payload_size: int) -> bool:
@@ -44,12 +52,7 @@ class ChunkHeader(NamedTuple):
 
 
 def read_chunks(file_path: Path) -> Generator[tuple[ChunkHeader, bytes]]:
-    """Walk a USM file, yielding each chunk header with its payload.
-
-    Sole owner of the on-disk chunk layout, so demuxing and key recovery cannot
-    drift apart in how they read it. Typed as a Generator rather than an Iterator
-    because a caller that stops early closes it to drop the file handle.
-    """
+    file_size = file_path.stat().st_size
     with open(file_path, "rb") as fp:
         while True:
             raw = fp.read(HEADER_SIZE)
@@ -58,18 +61,18 @@ def read_chunks(file_path: Path) -> Generator[tuple[ChunkHeader, bytes]]:
 
             header = ChunkHeader.from_bytes(raw)
             payload_size = header.data_size - header.data_offset - header.padding_size
-            # An undersized data_offset seeks back into the header just read, leaving the
-            # walk to creep forward a few bytes at a time re-parsing its own garbage.
+            # A data_offset inside the header would seek back and re-parse it as chunks.
             if payload_size < 0 or header.data_offset < MIN_DATA_OFFSET:
                 raise CharlotteError(f"Corrupt USM chunk in {file_path.name}")
 
             fp.seek(header.data_offset - MIN_DATA_OFFSET, 1)
-            payload = fp.read(payload_size)
-            # A short read means the file ends mid-chunk. Left alone it would just end
-            # the walk, quietly writing a truncated .ivf as though nothing was wrong.
-            if len(payload) < payload_size:
+            # Bound the payload before reading it: read() allocates the declared size up
+            # front (a corrupt size could ask for 4 GB), and a short read would only end
+            # the walk, leaving a truncated .ivf behind as if it were whole.
+            if payload_size > file_size - fp.tell():
                 raise CharlotteError(f"Truncated USM chunk in {file_path.name}")
 
+            payload = fp.read(payload_size)
             fp.seek(header.padding_size, 1)
             yield header, payload
 
@@ -120,6 +123,16 @@ class USM:
         return bytes(m)
 
     def decrypt_video(self, data: bytearray) -> None:
+        """Unmask a video payload in place.
+
+        The mask resets to plaintext ^ video_mask2 after every block, which collapses
+        against the running XOR of the ciphertext blocks:
+
+            even block:  plaintext = running ^ video_mask2
+            odd block:   plaintext = running
+
+        stages/crack.py relies on the same identity.
+        """
         if not is_masked(len(data)):
             return
 
@@ -128,23 +141,21 @@ class USM:
         buf = np.frombuffer(data, dtype=np.uint8)
         rows = (len(data) - CIPHER_START) // BLOCK
 
-        # The chain collapses against the running XOR of the ciphertext blocks: every
-        # even block comes out as plaintext ^ video_mask2 and every odd one as plaintext
-        # outright. stages/crack.py attacks the mask through the same identity.
         body = buf[CIPHER_START : CIPHER_START + rows * BLOCK].reshape(rows, BLOCK)
         running = np.bitwise_xor.accumulate(body, axis=0)
         running[0::2] ^= mask2
         body[:] = running
 
-        # A trailing partial block carries on the chain, so it takes the mask the last
-        # full block left behind - that block's plaintext, reset with video_mask2.
+        # A partial last block continues the chain with the mask the last full block
+        # left behind: its plaintext ^ video_mask2.
         tail = CIPHER_START + rows * BLOCK
         if tail < len(data):
             buf[tail:] ^= (running[-1] ^ mask2)[: len(data) - tail]
 
-        # The head is masked last, folding in the blocks 0x100 bytes further along.
+        # The head goes last: video_mask1, accumulated with the decrypted body blocks
+        # that follow it.
         head = buf[MASK_START:CIPHER_START].reshape(-1, BLOCK)
-        later = buf[CIPHER_START : CIPHER_START + CIPHER_START - MASK_START].reshape(-1, BLOCK)
+        later = buf[CIPHER_START : CIPHER_START + HEAD_SIZE].reshape(-1, BLOCK)
         head ^= mask1 ^ np.bitwise_xor.accumulate(later, axis=0)
 
     def demux(
