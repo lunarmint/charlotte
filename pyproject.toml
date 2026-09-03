@@ -1,6 +1,6 @@
 [project]
 name = "charlotte"
-version = "0.4.0"
+version = "0.4.1"
 description = "A cutscene encoder tool for a certain popular anime game."
 authors = [{ name = "lunarmint", email = "me@chocomint.dev" }]
 requires-python = ">=3.14"
@@ -10,19 +10,19 @@ dependencies = [
     "numpy>=2.5.2",
     "orjson>=3.12.0",
     "pyinstaller>=6.22.2",
-    "typer>=0.27.1",
+    "typer>=0.27.2",
     "urllib3>=2.7.0",
     "vapoursynth>=79",
     "vapoursynth-adaptivegrain>=0.5.0",
-    "vapoursynth-akarin>=1.4.1",
+    "vapoursynth-akarin>=1.5.0",
     "vapoursynth-bestsource>=21.0",
     "vapoursynth-dctfilter>=3.2",
     "vapoursynth-deblock>=9.0",
-    "vapoursynth-resize2>=0.5.0",
+    "vapoursynth-resize2>=0.5.1",
     "vapoursynth-vszip>=22.1.0",
     "vapoursynth-zsmooth>=0.20.0",
     "vs-placebo>=2.0.4",
-    "vsjetpack>=2.2.2",
+    "vsjetpack>=2.2.4",
     "vsnoise>=1.2.1",
     "vspreview>=0.20.1",
 ]
