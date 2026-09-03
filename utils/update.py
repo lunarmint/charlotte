@@ -94,6 +94,7 @@ def check_for_update() -> UpdateInfo:
     latest = release.get("tag_name")
     if not isinstance(latest, str) or not latest:
         return UpdateInfo(current=__version__, reason="no release tag found")
+    latest = latest.lstrip("vV")
     try:
         available = parse_version(latest) > parse_version(__version__)
     except ValueError:
@@ -117,7 +118,7 @@ def report_update(reporter: Reporter) -> UpdateInfo:
         link = f" ({info.url})" if info.url else ""
         log.info(f"Update available: {info.current} -> {info.latest}{link}")
     else:
-        log.info(f"No updates available. Charlotte v{info.current} is up to date.")
+        log.info(f"No updates available. Charlotte {info.current} is up to date.")
 
     reporter.event(
         "update",
@@ -255,6 +256,6 @@ def run_update(reporter: Reporter, json_mode: bool) -> None:
 
     wants_install = reporter.ask(f"Download and install {info.latest} now?", default=False)
     if wants_install and apply_update(info, reporter):
-        log.info(f"Upgraded Charlotte from v{info.current} to {info.latest}!")
+        log.info(f"Upgraded Charlotte from {info.current} to {info.latest}!")
         log.info("Restart Charlotte to use the new version.")
         pause_before_exit()

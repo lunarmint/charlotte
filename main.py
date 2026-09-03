@@ -226,7 +226,7 @@ def demux(
     clear_stale_binary()
 
     if version:
-        typer.echo(f"Charlotte v{__version__}.")
+        typer.echo(f"Charlotte {__version__}.")
         raise typer.Exit(0)
 
     reporter = JsonReporter() if json_output else ConsoleReporter()

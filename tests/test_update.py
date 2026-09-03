@@ -63,7 +63,7 @@ def test_update_available(monkeypatch):
     info = check_for_update()
     expected = UpdateInfo(
         current=__version__,
-        latest="v99.0.0",
+        latest="99.0.0",
         available=True,
         url="https://example/rel",
         notes="notes",
@@ -71,6 +71,12 @@ def test_update_available(monkeypatch):
         reason=None,
     )
     assert info == expected
+
+
+def test_bare_tag_reports_unchanged(monkeypatch):
+    # Releases are tagged bare; test_update_available covers the older "v"-prefixed shape.
+    monkeypatch.setattr(utils.update, "fetch_latest_release", lambda: release("99.0.0"))
+    assert check_for_update().latest == "99.0.0"
 
 
 def test_update_carries_download_url(monkeypatch):
@@ -85,7 +91,7 @@ def test_up_to_date(monkeypatch):
     monkeypatch.setattr(utils.update, "fetch_latest_release", lambda: release(f"v{__version__}"))
     info = check_for_update()
     assert info.available is False
-    assert info.latest == f"v{__version__}"
+    assert info.latest == __version__
     assert info.reason is None
 
 
@@ -157,7 +163,7 @@ def test_apply_update_declines_without_asset(reporter, monkeypatch, tmp_path):
     # running_exe is stubbed because apply_update unlinks the partial .new next to it,
     # which would otherwise be a real delete attempt beside the running interpreter.
     monkeypatch.setattr(utils.update, "running_exe", lambda: tmp_path / "charlotte.exe")
-    info = UpdateInfo(current=__version__, latest="v99.0.0", available=True)
+    info = UpdateInfo(current=__version__, latest="99.0.0", available=True)
     assert utils.update.apply_update(info, reporter) is False
 
 
@@ -281,7 +287,7 @@ def test_run_update_installs_on_yes(monkeypatch):
     monkeypatch.setattr(utils.update, "pause_before_exit", lambda: paused.append(True))
 
     run_update(FakeReporter(answer=True), json_mode=False)
-    assert [info.latest for info in applied] == ["v99.0.0"]
+    assert [info.latest for info in applied] == ["99.0.0"]
     assert paused  # a successful install holds the console open so the result is readable
 
 
