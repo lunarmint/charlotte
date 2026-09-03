@@ -17,3 +17,5 @@ logging.basicConfig(
 log = logging.getLogger("charlotte")
 
 logging.getLogger("vapoursynth").setLevel(logging.ERROR)
+# Mute urllib3 redirect logs at INFO that dumps GitHub's signed asset URL on --update.
+logging.getLogger("urllib3").setLevel(logging.WARNING)
