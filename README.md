@@ -1,5 +1,5 @@
-<p style="text-align: center;">
-  <img width="2100" height="auto" src="https://raw.githubusercontent.com/lunarmint/charlotte/master/docs/imgs/banner.png" alt="Charlotte banner" />
+<p align="center">
+  <img width="2100" height="auto" src="https://raw.githubusercontent.com/The-Steambird/charlotte/master/docs/imgs/banner.png" alt="Charlotte banner" />
 </p>
 
 <p style="text-align: center;"><i>Hi there! I'm Charlotte, a journalist with The Steambird~</i></p>
@@ -18,8 +18,6 @@
 </p>
 
 # Charlotte
-
-Who else would archive Teyvat's cutscenes but its best journalist?
 
 Charlotte is a Genshin Impact utility that losslessly decrypts `.usm` cutscene files into playable `.mkv` videos, covering all known cutscenes from versions 1.0 through 7.0. Charlotte is also able to retrieve keys directly from USM file itself, although an explicitly defined key is still preferred for processing speed.
 
@@ -53,7 +51,7 @@ I should also mention that the VapourSynth filters are extremely heavy on CPU an
 
 ### Prerequisites
 
-1. Download `charlotte.exe` from the [latest release](https://github.com/lunarmint/charlotte/releases/latest).
+1. Download `charlotte.exe` from the [latest release](https://github.com/The-Steambird/charlotte/releases/latest).
 2. Locate `.usm` files at:
 ```
 [Game Directory]\Genshin Impact game\GenshinImpact_Data\StreamingAssets\VideoAssets\StandaloneWindows64
