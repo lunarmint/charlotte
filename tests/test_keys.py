@@ -6,7 +6,7 @@ from conftest import forbid_call
 from resources.keys import (
     Keys,
     calculate_key_from_filename,
-    find_key_from_file,
+    find_video_key,
     load_local_keys,
 )
 
@@ -22,21 +22,23 @@ def write_keys(root, data):
     return path
 
 
-# --- find_key_from_file ---
+# --- find_video_key ---
 
 
 def test_find_key_flat():
-    assert find_key_from_file(FLAT_KEYS, "Cs_B") == 111
+    assert find_video_key(FLAT_KEYS, "Cs_B") == 111
 
 
 def test_find_key_grouped():
-    assert find_key_from_file(GROUPED_KEYS, "Cs_C") == 222
+    assert find_video_key(GROUPED_KEYS, "Cs_C") == 222
 
 
 def test_find_key_missing():
-    assert find_key_from_file(FLAT_KEYS, "Cs_X") is None
-    assert find_key_from_file(GROUPED_KEYS, "Cs_X") is None
-    assert find_key_from_file({}, "Cs_A") is None
+    assert find_video_key(FLAT_KEYS, "Cs_X") is None
+    assert find_video_key(GROUPED_KEYS, "Cs_X") is None
+    assert find_video_key({}, "Cs_A") is None
+    # A group carrying no video list at all is a miss, not a KeyError.
+    assert find_video_key({"list": [{"videoKey": 1}]}, "Cs_A") is None
 
 
 # --- load_local_keys ---

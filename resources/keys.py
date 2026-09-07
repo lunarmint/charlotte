@@ -10,10 +10,13 @@ from utils.paths import app_root
 
 
 if TYPE_CHECKING:
+    from pathlib import Path
+
     from utils.reporter import Reporter
 
 
-http = urllib3.PoolManager()
+def keys_path() -> Path:
+    return app_root() / "keys.json"
 
 
 def calculate_key_from_filename(filename: str) -> int:
@@ -29,49 +32,35 @@ def calculate_key_from_filename(filename: str) -> int:
     for char in filename:
         sum_val = ord(char) + 3 * sum_val
 
-    sum_val &= 0xFFFFFFFFFFFFFF
-    result = 0x100000000000000
-    if sum_val > 0:
-        result = sum_val
-
-    return result
+    return (sum_val & 0xFFFFFFFFFFFFFF) or 0x100000000000000
 
 
 @functools.cache
 def fetch_upstream_keys() -> bytes | None:
-    """Fetch keys.json from upstream repository to memory. Cached: at most one request
-    per run, even when a whole batch is missing keys."""
     keys_url = "https://raw.githubusercontent.com/lunarmint/charlotte/refs/heads/master/keys.json"
     try:
         log.info("Attempting to fetch keys.json from upstream...")
-        response = http.request("GET", keys_url, timeout=10.0)
+        response = urllib3.request("GET", keys_url, timeout=10.0)
         if response.status == 200:
             log.info("Successfully fetched keys.json.")
             return response.data
         log.warning(f"HTTP Error {response.status} while fetching keys.json.")
-    except urllib3.exceptions.HTTPError as e:
-        log.error(f"Failed to connect to upstream to fetch keys.json: {e}")
     except Exception as e:
         log.error(f"Failed to download keys.json: {e}")
     return None
 
 
-def find_key_from_file(data: dict, filename: str) -> int | None:
+def find_video_key(data: dict, filename: str) -> int | None:
     for version in data.get("list", []):
-        if "videos" in version and filename in version["videos"]:
-            return version.get("videoKey", None)
-
-        if "videoGroups" in version:
-            for group in version["videoGroups"]:
-                if filename in group["videos"]:
-                    return group.get("videoKey", None)
+        for group in [version, *version.get("videoGroups", [])]:
+            if filename in group.get("videos", []):
+                return group.get("videoKey")
     return None
 
 
 def load_local_keys() -> dict:
-    """Read-only parse of the local keys.json for probing."""
     try:
-        return orjson.loads((app_root() / "keys.json").read_bytes())
+        return orjson.loads(keys_path().read_bytes())
     except OSError, orjson.JSONDecodeError:
         return {}
 
@@ -80,13 +69,14 @@ class Keys:
     def __init__(self, reporter: Reporter, manual_key: int | None = None):
         self.reporter = reporter
         self.manual_key = manual_key
-        self.path = app_root() / "keys.json"
+        self.path = keys_path()
         self.data: dict = {}
         self.raw = b""
         self.declined = False
-        if manual_key is not None:
-            return
+        if manual_key is None:
+            self.bootstrap()
 
+    def bootstrap(self) -> None:
         if not self.path.exists():
             log.info(f"keys.json not found at {self.path}.")
             upstream_bytes = fetch_upstream_keys()
@@ -99,15 +89,15 @@ class Keys:
         try:
             self.data = orjson.loads(self.raw)
         except orjson.JSONDecodeError:
-            log.error("Error decoding local keys.json. Attempting to recover from upstream...")
-            self.data = {"list": []}
+            log.error("Error decoding local keys.json. Upstream is checked when a key is missing.")
+            self.data = {}
             self.raw = b""
 
     def get(self, stem: str) -> int | None:
         if self.manual_key is not None:
             return self.manual_key
 
-        key = find_key_from_file(self.data, stem)
+        key = find_video_key(self.data, stem)
         if key is not None:
             return key
 
@@ -115,13 +105,15 @@ class Keys:
             log.info(f"No keys.json entry for {stem}: the update was declined.")
             return None
 
+        return self.key_from_upstream(stem)
+
+    def key_from_upstream(self, stem: str) -> int | None:
         log.info(f"Key for {stem} not found. Checking upstream...")
         upstream_bytes = fetch_upstream_keys()
-
-        if upstream_bytes is None:
+        if not upstream_bytes:
             return None
 
-        if not upstream_bytes or upstream_bytes == self.raw:
+        if upstream_bytes == self.raw:
             log.info("Upstream keys.json is identical to local file.")
             return None
 
@@ -131,7 +123,7 @@ class Keys:
             log.error("Error decoding upstream keys.json.")
             return None
 
-        new_key = find_key_from_file(upstream_data, stem)
+        new_key = find_video_key(upstream_data, stem)
         if new_key is None:
             log.info(f"Key for {stem} not found upstream either.")
             return None
@@ -159,9 +151,6 @@ class Keys:
         if key2 is None:
             return None
 
-        final_key = (key1 + key2) & 0xFFFFFFFFFFFFFF
-        if final_key == 0:
-            final_key = 0x100000000000000
-
+        final_key = ((key1 + key2) & 0xFFFFFFFFFFFFFF) or 0x100000000000000
         key_bytes = final_key.to_bytes(8, byteorder="little")
         return key_bytes[:4], key_bytes[4:]

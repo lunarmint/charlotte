@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from resources.keys import calculate_key_from_filename, find_key_from_file
+from resources.keys import calculate_key_from_filename, find_video_key
 from resources.subtitles import local_subtitle_path
 from stages.ass import ASS
 from stages.crack import crack_key
@@ -266,7 +266,7 @@ def probe_usm(usm_file: Path, keys_data: dict, reporter: Reporter) -> None:
     """Report what is available for this file without processing anything."""
     stem = usm_file.stem
     sub_stem = BASENAME_FIXES.get(stem, stem)
-    key = find_key_from_file(keys_data, stem) is not None
+    key = find_video_key(keys_data, stem) is not None
     subtitles = [
         lang for lang in SUBTITLES_LANGUAGES if local_subtitle_path(sub_stem, lang).exists()
     ]
