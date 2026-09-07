@@ -17,9 +17,6 @@ if TYPE_CHECKING:
     from utils.reporter import Reporter
 
 
-http = urllib3.PoolManager()
-
-
 SUBTITLE_ARCHIVE_URL = (
     "https://gitlab.com/Dimbreath/animegamedata2/-/archive/main/"
     "animegamedata2-main.zip?path=Subtitle"
@@ -61,7 +58,7 @@ def write_commit(commit: str) -> None:
 
 def latest_commit() -> str:
     try:
-        response = http.request("GET", SUBTITLE_COMMITS_URL, timeout=10.0)
+        response = urllib3.request("GET", SUBTITLE_COMMITS_URL, timeout=10.0)
     except urllib3.exceptions.HTTPError as e:
         raise CharlotteError(f"Could not check for updates: {e}") from e
 
@@ -76,7 +73,7 @@ def latest_commit() -> str:
 
 def fetch_archive() -> zipfile.ZipFile:
     try:
-        response = http.request("GET", SUBTITLE_ARCHIVE_URL, timeout=120.0)
+        response = urllib3.request("GET", SUBTITLE_ARCHIVE_URL, timeout=120.0)
     except urllib3.exceptions.HTTPError as e:
         raise CharlotteError(f"Download failed: {e}") from e
 

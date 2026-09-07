@@ -18,9 +18,6 @@ if TYPE_CHECKING:
     from utils.reporter import Reporter
 
 
-http = urllib3.PoolManager()
-
-
 @dataclass(frozen=True)
 class UpdateInfo:
     current: str
@@ -65,7 +62,7 @@ def fetch_latest_release() -> dict | None:
     }
     try:
         log.info("Checking for updates...")
-        response = http.request("GET", url, headers=headers, timeout=10.0)
+        response = urllib3.request("GET", url, headers=headers, timeout=10.0)
         if response.status == 200:
             return orjson.loads(response.data)
         log.warning(f"HTTP {response.status} while checking for updates.")
@@ -186,7 +183,7 @@ def download_binary(url: str, dest: Path, reporter: Reporter) -> None:
     Raises CharlotteError on failure."""
     headers = {"User-Agent": f"charlotte/{__version__}"}
     try:
-        with http.request(
+        with urllib3.request(
             "GET", url, headers=headers, preload_content=False, timeout=60.0
         ) as response:
             if response.status != 200:
