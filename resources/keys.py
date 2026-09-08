@@ -139,7 +139,7 @@ class Keys:
         try:
             self.path.write_bytes(upstream_bytes)
         except OSError as e:
-            log.warning(f"Could not save keys.json: {e}")
+            log.warning(f"Failed to save keys.json: {e}")
 
         self.data = upstream_data
         self.raw = upstream_bytes

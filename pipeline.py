@@ -263,7 +263,6 @@ def crack_all(usm_files: list[Path], reporter: Reporter) -> None:
 
 
 def probe_usm(usm_file: Path, keys_data: dict, reporter: Reporter) -> None:
-    """Report what is available for this file without processing anything."""
     stem = usm_file.stem
     sub_stem = BASENAME_FIXES.get(stem, stem)
     key = find_video_key(keys_data, stem) is not None

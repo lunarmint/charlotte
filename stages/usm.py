@@ -63,14 +63,14 @@ def read_chunks(file_path: Path) -> Generator[tuple[ChunkHeader, bytes]]:
             payload_size = header.data_size - header.data_offset - header.padding_size
             # A data_offset inside the header would seek back and re-parse it as chunks.
             if payload_size < 0 or header.data_offset < MIN_DATA_OFFSET:
-                raise CharlotteError(f"Corrupt USM chunk in {file_path.name}")
+                raise CharlotteError(f"Corrupt USM chunk: {file_path.name}")
 
             fp.seek(header.data_offset - MIN_DATA_OFFSET, 1)
             # Bound the payload before reading it: read() allocates the declared size up
             # front (a corrupt size could ask for 4 GB), and a short read would only end
             # the walk, leaving a truncated .ivf behind as if it were whole.
             if payload_size > file_size - fp.tell():
-                raise CharlotteError(f"Truncated USM chunk in {file_path.name}")
+                raise CharlotteError(f"Truncated USM chunk: {file_path.name}")
 
             payload = fp.read(payload_size)
             fp.seek(header.padding_size, 1)

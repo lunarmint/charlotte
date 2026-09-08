@@ -339,7 +339,7 @@ def test_crack_failure_keeps_the_same_event_shape(tmp_app_root, reporter, monkey
 def test_crack_batch_continues_past_an_unreadable_file(tmp_app_root, reporter, monkeypatch):
     def crack(usm_file, reporter):
         if usm_file.name == "Cs_Bad.usm":
-            raise CharlotteError("Corrupt USM chunk in Cs_Bad.usm")
+            raise CharlotteError("Corrupt USM chunk: Cs_Bad.usm")
         return Recovery((bytes(4), bytes(4)), "")
 
     monkeypatch.setattr(pipeline, "crack_key", crack)

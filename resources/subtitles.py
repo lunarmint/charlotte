@@ -60,10 +60,10 @@ def latest_commit() -> str:
     try:
         response = urllib3.request("GET", SUBTITLE_COMMITS_URL, timeout=10.0)
     except urllib3.exceptions.HTTPError as e:
-        raise CharlotteError(f"Could not check for updates: {e}") from e
+        raise CharlotteError(f"Failed to check for subtitle updates: {e}") from e
 
     if response.status != 200:
-        raise CharlotteError(f"Could not check for updates (HTTP {response.status}).")
+        raise CharlotteError(f"Failed to check for subtitle updates: HTTP {response.status}.")
 
     try:
         return orjson.loads(response.data)[0]["id"]

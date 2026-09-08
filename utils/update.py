@@ -65,11 +65,11 @@ def fetch_latest_release() -> dict | None:
         response = urllib3.request("GET", url, headers=headers, timeout=10.0)
         if response.status == 200:
             return orjson.loads(response.data)
-        log.warning(f"HTTP {response.status} while checking for updates.")
+        log.warning(f"Failed to check for updates: HTTP {response.status}.")
     except urllib3.exceptions.HTTPError as e:
-        log.error(f"Failed to reach GitHub to check for updates: {e}")
+        log.error(f"Failed to check for updates: GitHub unreachable ({e})")
     except orjson.JSONDecodeError as e:
-        log.error(f"Malformed release data from GitHub: {e}")
+        log.error(f"Failed to check for updates: malformed release data ({e})")
     except Exception as e:
         log.error(f"Failed to check for updates: {e}")
     return None
@@ -110,7 +110,7 @@ def check_for_update() -> UpdateInfo:
 def report_update(reporter: Reporter) -> UpdateInfo:
     info = check_for_update()
     if info.reason is not None:
-        log.warning(f"Could not check for updates: {info.reason}.")
+        log.warning(f"Failed to check for updates: {info.reason}.")
     elif info.available and info.latest:
         link = f" ({info.url})" if info.url else ""
         log.info(f"Update available: {info.current} -> {info.latest}{link}")
@@ -187,7 +187,7 @@ def download_binary(url: str, dest: Path, reporter: Reporter) -> None:
             "GET", url, headers=headers, preload_content=False, timeout=60.0
         ) as response:
             if response.status != 200:
-                raise CharlotteError(f"HTTP {response.status} while downloading the update.")
+                raise CharlotteError(f"Failed to download the update: HTTP {response.status}.")
             stream_to_file(response, dest, reporter)
     except urllib3.exceptions.HTTPError as e:
         raise CharlotteError(f"Failed to download the update: {e}") from e
@@ -204,7 +204,7 @@ def swap_binary(new_file: Path) -> None:
         stale.unlink(missing_ok=True)
         exe.rename(stale)
     except OSError as e:
-        raise CharlotteError(f"Could not move the current binary aside: {e}") from e
+        raise CharlotteError(f"Failed to move the current binary aside: {e}") from e
     try:
         new_file.rename(exe)
     except OSError as e:
@@ -213,7 +213,7 @@ def swap_binary(new_file: Path) -> None:
             stale.rename(exe)
         except OSError as rollback_error:
             log.error(f"Rollback failed, restore {stale.name} manually: {rollback_error}")
-        raise CharlotteError(f"Could not put the new binary in place: {e}") from e
+        raise CharlotteError(f"Failed to put the new binary in place: {e}") from e
 
 
 def apply_update(info: UpdateInfo, reporter: Reporter) -> bool:
