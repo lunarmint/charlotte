@@ -7,7 +7,7 @@ requires-python = ">=3.14"
 readme = "README.md"
 maintainers = [{ name = "Mint" }]
 dependencies = [
-    "numpy>=2.5.2",
+    "numpy>=2.5.3",
     "orjson>=3.12.0",
     "pyinstaller>=6.22.2",
     "typer>=0.27.2",
@@ -23,7 +23,7 @@ dependencies = [
     "vapoursynth-zsmooth>=0.20.0",
     "vs-placebo>=2.0.4",
     "vsjetpack>=2.2.4",
-    "vsnoise>=1.2.1",
+    "vsnoise>=1.3",
     "vspreview>=0.20.1",
 ]
 
